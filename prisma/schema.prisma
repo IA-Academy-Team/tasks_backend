@@ -12,3 +12,262 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum UserRole {
+  ADMIN
+  EMPLOYEE
+}
+
+enum AuthProviderType {
+  PASSWORD
+  OAUTH
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ProjectStatus {
+  ACTIVE
+  CLOSED
+  CANCELLED
+}
+
+enum TaskStatus {
+  ASSIGNED
+  IN_PROGRESS
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model User {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email       String   @unique(map: "uq_users_email") @db.VarChar(320)
+  fullName    String   @map("full_name") @db.VarChar(150)
+  phoneNumber String?  @map("phone_number") @db.VarChar(30)
+  role        UserRole
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  authIdentities             AuthIdentity[]
+  authSessions               AuthSession[]
+  employee                   Employee?
+  areaAssignmentsStarted     EmployeeAreaAssignment[] @relation("AreaAssignmentsStartedBy")
+  areaAssignmentsEnded       EmployeeAreaAssignment[] @relation("AreaAssignmentsEndedBy")
+  projectMembershipsAssigned ProjectMembership[]      @relation("ProjectMembershipsAssignedBy")
+  projectMembershipsEnded    ProjectMembership[]      @relation("ProjectMembershipsEndedBy")
+  tasksCreated               Task[]                   @relation("TasksCreatedBy")
+  taskTransitionsChanged     TaskStatusTransition[]   @relation("TaskStatusTransitionsChangedBy")
+  workSessionsStarted        TaskWorkSession[]        @relation("TaskWorkSessionsStartedBy")
+  workSessionsEnded          TaskWorkSession[]        @relation("TaskWorkSessionsEndedBy")
+
+  @@index([role], map: "idx_users_role")
+  @@map("users")
+}
+
+model AuthIdentity {
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String           @map("user_id") @db.Uuid
+  providerType    AuthProviderType @map("provider_type")
+  providerName    String           @map("provider_name") @db.VarChar(50)
+  providerSubject String           @map("provider_subject") @db.VarChar(255)
+  passwordHash    String?          @map("password_hash") @db.VarChar(255)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime         @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerName, providerSubject], map: "uq_auth_identities_provider_subject")
+  @@unique([userId, providerName], map: "uq_auth_identities_user_provider")
+  @@index([userId], map: "idx_auth_identities_user_id")
+  @@map("auth_identities")
+}
+
+model AuthSession {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique(map: "uq_auth_sessions_token_hash") @map("token_hash") @db.Char(64)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  ipAddress String?   @map("ip_address") @db.VarChar(45)
+  userAgent String?   @map("user_agent") @db.Text
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt], map: "idx_auth_sessions_user_expires_at")
+  @@index([expiresAt], map: "idx_auth_sessions_expires_at")
+  @@map("auth_sessions")
+}
+
+model Employee {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String         @unique(map: "uq_employees_user_id") @map("user_id") @db.Uuid
+  status        EmployeeStatus @default(ACTIVE)
+  deactivatedAt DateTime?      @map("deactivated_at") @db.Timestamptz(6)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime       @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  user               User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  areaAssignments    EmployeeAreaAssignment[]
+  projectMemberships ProjectMembership[]
+
+  @@index([status], map: "idx_employees_status")
+  @@map("employees")
+}
+
+model Area {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String   @unique(map: "uq_areas_name") @db.VarChar(120)
+  description String?  @db.Text
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  employeeAreaAssignments EmployeeAreaAssignment[]
+  projects                Project[]
+
+  @@index([isActive], map: "idx_areas_is_active")
+  @@map("areas")
+}
+
+model EmployeeAreaAssignment {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId       String    @map("employee_id") @db.Uuid
+  areaId           String    @map("area_id") @db.Uuid
+  assignedByUserId String    @map("assigned_by_user_id") @db.Uuid
+  endedByUserId    String?   @map("ended_by_user_id") @db.Uuid
+  assignedAt       DateTime  @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  endedAt          DateTime? @map("ended_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  area           Area     @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  assignedByUser User     @relation("AreaAssignmentsStartedBy", fields: [assignedByUserId], references: [id], onDelete: Restrict)
+  endedByUser    User?    @relation("AreaAssignmentsEndedBy", fields: [endedByUserId], references: [id], onDelete: Restrict)
+  /// SQL migration adds a partial unique index on employee_id where ended_at IS NULL.
+
+  @@index([employeeId, endedAt], map: "idx_employee_area_assignments_employee_ended_at")
+  @@index([areaId, endedAt], map: "idx_employee_area_assignments_area_ended_at")
+  @@map("employee_area_assignments")
+}
+
+model Project {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  areaId      String        @map("area_id") @db.Uuid
+  name        String        @db.VarChar(160)
+  description String?       @db.Text
+  status      ProjectStatus @default(ACTIVE)
+  startDate   DateTime?     @map("start_date") @db.Date
+  endDate     DateTime?     @map("end_date") @db.Date
+  closedAt    DateTime?     @map("closed_at") @db.Timestamptz(6)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  area        Area                @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  memberships ProjectMembership[]
+  tasks       Task[]
+
+  @@unique([areaId, name], map: "uq_projects_area_name")
+  @@index([areaId, status], map: "idx_projects_area_status")
+  @@map("projects")
+}
+
+model ProjectMembership {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String    @map("project_id") @db.Uuid
+  employeeId       String    @map("employee_id") @db.Uuid
+  assignedByUserId String    @map("assigned_by_user_id") @db.Uuid
+  endedByUserId    String?   @map("ended_by_user_id") @db.Uuid
+  assignedAt       DateTime  @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  unassignedAt     DateTime? @map("unassigned_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  project        Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  employee       Employee          @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  assignedByUser User              @relation("ProjectMembershipsAssignedBy", fields: [assignedByUserId], references: [id], onDelete: Restrict)
+  endedByUser    User?             @relation("ProjectMembershipsEndedBy", fields: [endedByUserId], references: [id], onDelete: Restrict)
+  assignedTasks  Task[]            @relation("TaskAssigneeMembership")
+  workSessions   TaskWorkSession[]
+  /// SQL migration adds a partial unique index on [projectId, employeeId] where unassignedAt IS NULL.
+
+  @@index([projectId, unassignedAt], map: "idx_project_memberships_project_unassigned_at")
+  @@index([employeeId, unassignedAt], map: "idx_project_memberships_employee_unassigned_at")
+  @@map("project_memberships")
+}
+
+model Task {
+  id                   String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId            String       @map("project_id") @db.Uuid
+  assigneeMembershipId String?      @map("assignee_membership_id") @db.Uuid
+  title                String       @db.VarChar(160)
+  description          String?      @db.Text
+  priority             TaskPriority @default(MEDIUM)
+  status               TaskStatus   @default(ASSIGNED)
+  plannedStartDate     DateTime     @map("planned_start_date") @db.Date
+  dueDate              DateTime     @map("due_date") @db.Date
+  estimatedMinutes     Int?         @map("estimated_minutes")
+  deletedAt            DateTime?    @map("deleted_at") @db.Timestamptz(6)
+  createdByUserId      String       @map("created_by_user_id") @db.Uuid
+  createdAt            DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime     @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  project            Project                @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  assigneeMembership ProjectMembership?     @relation("TaskAssigneeMembership", fields: [assigneeMembershipId], references: [id], onDelete: Restrict)
+  createdByUser      User                   @relation("TasksCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  statusTransitions  TaskStatusTransition[]
+  workSessions       TaskWorkSession[]
+
+  @@index([projectId, status], map: "idx_tasks_project_status")
+  @@index([assigneeMembershipId, status], map: "idx_tasks_assignee_status")
+  @@index([dueDate], map: "idx_tasks_due_date")
+  @@index([deletedAt], map: "idx_tasks_deleted_at")
+  @@map("tasks")
+}
+
+model TaskStatusTransition {
+  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId          String      @map("task_id") @db.Uuid
+  fromStatus      TaskStatus? @map("from_status")
+  toStatus        TaskStatus  @map("to_status")
+  changedByUserId String      @map("changed_by_user_id") @db.Uuid
+  changedAt       DateTime    @default(now()) @map("changed_at") @db.Timestamptz(6)
+  notes           String?     @db.Text
+
+  task          Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  changedByUser User @relation("TaskStatusTransitionsChangedBy", fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([taskId, changedAt], map: "idx_task_status_transitions_task_changed_at")
+  @@map("task_status_transitions")
+}
+
+model TaskWorkSession {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId              String    @map("task_id") @db.Uuid
+  projectMembershipId String    @map("project_membership_id") @db.Uuid
+  startedByUserId     String    @map("started_by_user_id") @db.Uuid
+  endedByUserId       String?   @map("ended_by_user_id") @db.Uuid
+  startedAt           DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt             DateTime? @map("ended_at") @db.Timestamptz(6)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  task              Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  projectMembership ProjectMembership @relation(fields: [projectMembershipId], references: [id], onDelete: Restrict)
+  startedByUser     User              @relation("TaskWorkSessionsStartedBy", fields: [startedByUserId], references: [id], onDelete: Restrict)
+  endedByUser       User?             @relation("TaskWorkSessionsEndedBy", fields: [endedByUserId], references: [id], onDelete: Restrict)
+  /// SQL migration adds a partial unique index on taskId where endedAt IS NULL.
+
+  @@index([taskId, startedAt], map: "idx_task_work_sessions_task_started_at")
+  @@index([projectMembershipId, startedAt], map: "idx_task_work_sessions_membership_started_at")
+  @@map("task_work_sessions")
+}
