@@ -15,7 +15,8 @@
     "swagger": "npm run swagger:generate",
     "swagger:guide": "npm run swagger:generate && node --import tsx src/shared/scripts/generate-swagger-endpoint-guide.ts",
     "prisma:migrate:seed": "node --import tsx prisma/seeds.ts",
-    "swagger:generate": "node --import tsx src/shared/scripts/generate-swagger.ts"
+    "swagger:generate": "node --import tsx src/shared/scripts/generate-swagger.ts",
+    "test:endpoints:live": "node --import tsx src/shared/scripts/test-endpoints-live.ts"
   },
   "keywords": [],
   "author": "",
@@ -43,6 +44,8 @@
     "morgan": "^1.10.1",
     "nodemon": "^3.1.14",
     "prisma": "^7.4.2",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }
