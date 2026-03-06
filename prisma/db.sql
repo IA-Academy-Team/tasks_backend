@@ -1,6 +1,46 @@
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- Database: traskapp
+select * from status;
+select * from role;
+select * from company;
+select * from type_recipient;
+select * from type_expense;
+select * from type_payment;
+select * from type_account;
+select * from bank;
+select * from type_document;
+select * from policy;
+select * from holyday;
+select * from country;
+select * from business;
+select * from city;
+select * from cost_center;
+select * from user;
+select * from provider;
+select * from recipient;
+select * from advance;
+select * from legalization;
+select * from concept;
+select * from document;
+select * from rut;
+select * from document_provider;
+select * from notification;
+select * from audit;
 
-CREATE TYPE user_role AS ENUM ('ADMIN', 'EMPLOYEE');
+-- DDL: Crear base de datos y tablas
+
+-- DROP DATABASE IF EXISTS traskapp_dev;
+CREATE DATABASE IF NOT EXISTS traskapp_dev;
+\c traskapp_dev;
+\dt;
+
+-- ==============================
+-- Tablas sin dependencias
+-- ==============================
+CREATE TABLE roles (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(12) NOT NULL,
+);
+
 CREATE TYPE auth_provider_type AS ENUM ('PASSWORD', 'OAUTH');
 CREATE TYPE employee_status AS ENUM ('ACTIVE', 'INACTIVE');
 CREATE TYPE project_status AS ENUM ('ACTIVE', 'CLOSED', 'CANCELLED');
@@ -8,19 +48,19 @@ CREATE TYPE task_status AS ENUM ('ASSIGNED', 'IN_PROGRESS', 'DONE');
 CREATE TYPE task_priority AS ENUM ('LOW', 'MEDIUM', 'HIGH');
 
 CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(320) NOT NULL,
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(120) NOT NULL UNIQUE,
     full_name VARCHAR(150) NOT NULL,
-    phone_number VARCHAR(30),
-    role user_role NOT NULL,
+    phone_number VARCHAR(20),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_users_email UNIQUE (email)
+    role_id INT NOT NULL,
+    FOREIGN KEY (role_id) REFERENCES roles(id)
 );
 
 CREATE TABLE auth_identities (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL,
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL,
     provider_type auth_provider_type NOT NULL,
     provider_name VARCHAR(50) NOT NULL,
     provider_subject VARCHAR(255) NOT NULL,
@@ -39,8 +79,8 @@ CREATE TABLE auth_identities (
 );
 
 CREATE TABLE auth_sessions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL,
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL,
     token_hash CHAR(64) NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
     revoked_at TIMESTAMPTZ,
@@ -58,8 +98,8 @@ CREATE TABLE auth_sessions (
 );
 
 CREATE TABLE employees (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL,
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL,
     status employee_status NOT NULL DEFAULT 'ACTIVE',
     deactivated_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -75,7 +115,7 @@ CREATE TABLE employees (
 );
 
 CREATE TABLE areas (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id SERIAL PRIMARY KEY,
     name VARCHAR(120) NOT NULL,
     description TEXT,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -85,11 +125,11 @@ CREATE TABLE areas (
 );
 
 CREATE TABLE employee_area_assignments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    employee_id UUID NOT NULL,
-    area_id UUID NOT NULL,
-    assigned_by_user_id UUID NOT NULL,
-    ended_by_user_id UUID,
+    id SERIAL PRIMARY KEY,
+    employee_id INT NOT NULL,
+    area_id INT NOT NULL,
+    assigned_by_user_id INT NOT NULL,
+    ended_by_user_id INT,
     assigned_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     ended_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -113,8 +153,8 @@ CREATE TABLE employee_area_assignments (
 );
 
 CREATE TABLE projects (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    area_id UUID NOT NULL,
+    id SERIAL PRIMARY KEY,
+    area_id INT NOT NULL,
     name VARCHAR(160) NOT NULL,
     description TEXT,
     status project_status NOT NULL DEFAULT 'ACTIVE',
@@ -137,11 +177,11 @@ CREATE TABLE projects (
 );
 
 CREATE TABLE project_memberships (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL,
-    employee_id UUID NOT NULL,
-    assigned_by_user_id UUID NOT NULL,
-    ended_by_user_id UUID,
+    id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL,
+    employee_id INT NOT NULL,
+    assigned_by_user_id INT NOT NULL,
+    ended_by_user_id INT,
     assigned_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     unassigned_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -165,9 +205,9 @@ CREATE TABLE project_memberships (
 );
 
 CREATE TABLE tasks (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL,
-    assignee_membership_id UUID,
+    id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL,
+    assignee_membership_id INT,
     title VARCHAR(160) NOT NULL,
     description TEXT,
     priority task_priority NOT NULL DEFAULT 'MEDIUM',
@@ -176,7 +216,7 @@ CREATE TABLE tasks (
     due_date DATE NOT NULL,
     estimated_minutes INTEGER,
     deleted_at TIMESTAMPTZ,
-    created_by_user_id UUID NOT NULL,
+    created_by_user_id INT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_tasks_project
@@ -201,11 +241,11 @@ CREATE TABLE tasks (
 );
 
 CREATE TABLE task_status_transitions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    task_id UUID NOT NULL,
+    id SERIAL PRIMARY KEY,
+    task_id INT NOT NULL,
     from_status task_status,
     to_status task_status NOT NULL,
-    changed_by_user_id UUID NOT NULL,
+    changed_by_user_id INT NOT NULL,
     changed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     notes TEXT,
     CONSTRAINT fk_task_status_transitions_task
@@ -220,11 +260,11 @@ CREATE TABLE task_status_transitions (
 );
 
 CREATE TABLE task_work_sessions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    task_id UUID NOT NULL,
-    project_membership_id UUID NOT NULL,
-    started_by_user_id UUID NOT NULL,
-    ended_by_user_id UUID,
+    id SERIAL PRIMARY KEY,
+    task_id INT NOT NULL,
+    project_membership_id INT NOT NULL,
+    started_by_user_id INT NOT NULL,
+    ended_by_user_id INT,
     started_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     ended_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -312,321 +352,3 @@ CREATE INDEX idx_task_work_sessions_membership_started_at
 CREATE UNIQUE INDEX uq_task_work_sessions_open_task
     ON task_work_sessions (task_id)
     WHERE ended_at IS NULL;
-
-CREATE OR REPLACE FUNCTION set_updated_at()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION ensure_employee_user_role()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    current_role user_role;
-BEGIN
-    SELECT role
-    INTO current_role
-    FROM users
-    WHERE id = NEW.user_id;
-
-    IF current_role IS DISTINCT FROM 'EMPLOYEE' THEN
-        RAISE EXCEPTION 'employees.user_id must reference a user with role EMPLOYEE';
-    END IF;
-
-    RETURN NEW;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION ensure_active_area_assignment()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    current_employee_status employee_status;
-    current_area_active BOOLEAN;
-BEGIN
-    IF NEW.ended_at IS NULL THEN
-        SELECT status
-        INTO current_employee_status
-        FROM employees
-        WHERE id = NEW.employee_id;
-
-        IF current_employee_status IS DISTINCT FROM 'ACTIVE' THEN
-            RAISE EXCEPTION 'cannot create an active area assignment for an inactive employee';
-        END IF;
-
-        SELECT is_active
-        INTO current_area_active
-        FROM areas
-        WHERE id = NEW.area_id;
-
-        IF current_area_active IS DISTINCT FROM TRUE THEN
-            RAISE EXCEPTION 'cannot assign an employee to an inactive area';
-        END IF;
-    END IF;
-
-    RETURN NEW;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION ensure_active_project_membership()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    current_employee_status employee_status;
-    current_project_status project_status;
-BEGIN
-    IF NEW.unassigned_at IS NULL THEN
-        SELECT status
-        INTO current_employee_status
-        FROM employees
-        WHERE id = NEW.employee_id;
-
-        IF current_employee_status IS DISTINCT FROM 'ACTIVE' THEN
-            RAISE EXCEPTION 'cannot create an active project membership for an inactive employee';
-        END IF;
-
-        SELECT status
-        INTO current_project_status
-        FROM projects
-        WHERE id = NEW.project_id;
-
-        IF current_project_status IS DISTINCT FROM 'ACTIVE' THEN
-            RAISE EXCEPTION 'cannot assign employees to a non-active project';
-        END IF;
-    END IF;
-
-    RETURN NEW;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION ensure_valid_task_assignment()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    membership_project_id UUID;
-    membership_unassigned_at TIMESTAMPTZ;
-    membership_employee_status employee_status;
-    current_project_status project_status;
-BEGIN
-    IF NEW.assignee_membership_id IS NOT NULL THEN
-        SELECT pm.project_id, pm.unassigned_at, e.status, p.status
-        INTO membership_project_id, membership_unassigned_at, membership_employee_status, current_project_status
-        FROM project_memberships pm
-        JOIN employees e
-            ON e.id = pm.employee_id
-        JOIN projects p
-            ON p.id = pm.project_id
-        WHERE pm.id = NEW.assignee_membership_id;
-
-        IF membership_project_id IS NULL THEN
-            RAISE EXCEPTION 'task assignee membership does not exist';
-        END IF;
-
-        IF membership_project_id <> NEW.project_id THEN
-            RAISE EXCEPTION 'task assignee membership must belong to the same project as the task';
-        END IF;
-
-        IF membership_unassigned_at IS NOT NULL
-           AND NEW.deleted_at IS NULL
-           AND NEW.status <> 'DONE' THEN
-            RAISE EXCEPTION 'task cannot reference an inactive project membership';
-        END IF;
-
-        IF membership_employee_status IS DISTINCT FROM 'ACTIVE'
-           AND NEW.deleted_at IS NULL
-           AND NEW.status <> 'DONE' THEN
-            RAISE EXCEPTION 'task cannot be assigned to an inactive employee';
-        END IF;
-
-        IF current_project_status IS DISTINCT FROM 'ACTIVE'
-           AND NEW.deleted_at IS NULL
-           AND NEW.status <> 'DONE' THEN
-            RAISE EXCEPTION 'task cannot be assigned inside a non-active project';
-        END IF;
-    END IF;
-
-    IF NEW.status IN ('IN_PROGRESS', 'DONE')
-       AND (NEW.assignee_membership_id IS NULL OR NEW.estimated_minutes IS NULL) THEN
-        RAISE EXCEPTION 'tasks in progress or done require assignee_membership_id and estimated_minutes';
-    END IF;
-
-    RETURN NEW;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION ensure_valid_task_work_session()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    task_project_id UUID;
-    membership_project_id UUID;
-    membership_unassigned_at TIMESTAMPTZ;
-    membership_employee_status employee_status;
-    task_deleted_at TIMESTAMPTZ;
-BEGIN
-    SELECT project_id, deleted_at
-    INTO task_project_id, task_deleted_at
-    FROM tasks
-    WHERE id = NEW.task_id;
-
-    SELECT pm.project_id, pm.unassigned_at, e.status
-    INTO membership_project_id, membership_unassigned_at, membership_employee_status
-    FROM project_memberships pm
-    JOIN employees e
-        ON e.id = pm.employee_id
-    WHERE pm.id = NEW.project_membership_id;
-
-    IF task_project_id IS NULL OR membership_project_id IS NULL THEN
-        RAISE EXCEPTION 'task_work_sessions requires valid task and project membership';
-    END IF;
-
-    IF task_project_id <> membership_project_id THEN
-        RAISE EXCEPTION 'task_work_sessions membership must belong to the same project as the task';
-    END IF;
-
-    IF task_deleted_at IS NOT NULL THEN
-        RAISE EXCEPTION 'cannot create work sessions for deleted tasks';
-    END IF;
-
-    IF TG_OP = 'INSERT' THEN
-        IF membership_unassigned_at IS NOT NULL THEN
-            RAISE EXCEPTION 'cannot start a work session with an inactive project membership';
-        END IF;
-
-        IF membership_employee_status IS DISTINCT FROM 'ACTIVE' THEN
-            RAISE EXCEPTION 'cannot start a work session for an inactive employee';
-        END IF;
-    END IF;
-
-    RETURN NEW;
-END;
-$$;
-
-CREATE TRIGGER trg_users_set_updated_at
-BEFORE UPDATE ON users
-FOR EACH ROW
-EXECUTE FUNCTION set_updated_at();
-
-CREATE TRIGGER trg_auth_identities_set_updated_at
-BEFORE UPDATE ON auth_identities
-FOR EACH ROW
-EXECUTE FUNCTION set_updated_at();
-
-CREATE TRIGGER trg_auth_sessions_set_updated_at
-BEFORE UPDATE ON auth_sessions
-FOR EACH ROW
-EXECUTE FUNCTION set_updated_at();
-
-CREATE TRIGGER trg_employees_set_updated_at
-BEFORE UPDATE ON employees
-FOR EACH ROW
-EXECUTE FUNCTION set_updated_at();
-
-CREATE TRIGGER trg_areas_set_updated_at
-BEFORE UPDATE ON areas
-FOR EACH ROW
-EXECUTE FUNCTION set_updated_at();
-
-CREATE TRIGGER trg_employee_area_assignments_set_updated_at
-BEFORE UPDATE ON employee_area_assignments
-FOR EACH ROW
-EXECUTE FUNCTION set_updated_at();
-
-CREATE TRIGGER trg_projects_set_updated_at
-BEFORE UPDATE ON projects
-FOR EACH ROW
-EXECUTE FUNCTION set_updated_at();
-
-CREATE TRIGGER trg_project_memberships_set_updated_at
-BEFORE UPDATE ON project_memberships
-FOR EACH ROW
-EXECUTE FUNCTION set_updated_at();
-
-CREATE TRIGGER trg_tasks_set_updated_at
-BEFORE UPDATE ON tasks
-FOR EACH ROW
-EXECUTE FUNCTION set_updated_at();
-
-CREATE TRIGGER trg_task_work_sessions_set_updated_at
-BEFORE UPDATE ON task_work_sessions
-FOR EACH ROW
-EXECUTE FUNCTION set_updated_at();
-
-CREATE TRIGGER trg_employees_validate_user_role
-BEFORE INSERT OR UPDATE ON employees
-FOR EACH ROW
-EXECUTE FUNCTION ensure_employee_user_role();
-
-CREATE TRIGGER trg_employee_area_assignments_validate
-BEFORE INSERT OR UPDATE ON employee_area_assignments
-FOR EACH ROW
-EXECUTE FUNCTION ensure_active_area_assignment();
-
-CREATE TRIGGER trg_project_memberships_validate
-BEFORE INSERT OR UPDATE ON project_memberships
-FOR EACH ROW
-EXECUTE FUNCTION ensure_active_project_membership();
-
-CREATE TRIGGER trg_tasks_validate_assignment
-BEFORE INSERT OR UPDATE ON tasks
-FOR EACH ROW
-EXECUTE FUNCTION ensure_valid_task_assignment();
-
-CREATE TRIGGER trg_task_work_sessions_validate
-BEFORE INSERT OR UPDATE ON task_work_sessions
-FOR EACH ROW
-EXECUTE FUNCTION ensure_valid_task_work_session();
-
-CREATE OR REPLACE VIEW task_execution_summary AS
-WITH session_totals AS (
-    SELECT
-        tws.task_id,
-        MIN(tws.started_at) AS first_started_at,
-        MAX(tws.ended_at) AS last_ended_at,
-        SUM(EXTRACT(EPOCH FROM (COALESCE(tws.ended_at, CURRENT_TIMESTAMP) - tws.started_at))) / 60.0
-            AS actual_minutes
-    FROM task_work_sessions tws
-    GROUP BY tws.task_id
-)
-SELECT
-    t.id AS task_id,
-    t.project_id,
-    p.area_id,
-    pm.employee_id AS assignee_employee_id,
-    t.title,
-    t.status,
-    t.priority,
-    t.planned_start_date,
-    t.due_date,
-    t.estimated_minutes,
-    st.first_started_at,
-    st.last_ended_at,
-    COALESCE(ROUND(st.actual_minutes::NUMERIC, 2), 0) AS actual_minutes,
-    CASE
-        WHEN t.estimated_minutes IS NULL THEN 'UNASSESSED'
-        WHEN COALESCE(st.actual_minutes, 0) > t.estimated_minutes THEN 'LATE'
-        WHEN t.status = 'DONE' THEN 'ON_TIME'
-        ELSE 'UNASSESSED'
-    END AS compliance_status,
-    CASE
-        WHEN t.estimated_minutes IS NULL THEN NULL
-        ELSE ROUND((COALESCE(st.actual_minutes, 0) - t.estimated_minutes)::NUMERIC, 2)
-    END AS variance_minutes
-FROM tasks t
-JOIN projects p
-    ON p.id = t.project_id
-LEFT JOIN project_memberships pm
-    ON pm.id = t.assignee_membership_id
-LEFT JOIN session_totals st
-    ON st.task_id = t.id
-WHERE t.deleted_at IS NULL;

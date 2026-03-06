@@ -47,13 +47,13 @@ enum TaskPriority {
 }
 
 model User {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id          Int      @id @default(autoincrement())
   email       String   @unique(map: "uq_users_email") @db.VarChar(320)
   fullName    String   @map("full_name") @db.VarChar(150)
   phoneNumber String?  @map("phone_number") @db.VarChar(30)
   role        UserRole
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   authIdentities             AuthIdentity[]
   authSessions               AuthSession[]
@@ -72,14 +72,14 @@ model User {
 }
 
 model AuthIdentity {
-  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId          String           @map("user_id") @db.Uuid
+  id              Int              @id @default(autoincrement())
+  userId          Int              @map("user_id")
   providerType    AuthProviderType @map("provider_type")
   providerName    String           @map("provider_name") @db.VarChar(50)
   providerSubject String           @map("provider_subject") @db.VarChar(255)
   passwordHash    String?          @map("password_hash") @db.VarChar(255)
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime         @default(now()) @map("updated_at") @db.Timestamptz(6)
+  updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -90,15 +90,15 @@ model AuthIdentity {
 }
 
 model AuthSession {
-  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String    @map("user_id") @db.Uuid
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
   tokenHash String    @unique(map: "uq_auth_sessions_token_hash") @map("token_hash") @db.Char(64)
   expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
   revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
   ipAddress String?   @map("ip_address") @db.VarChar(45)
   userAgent String?   @map("user_agent") @db.Text
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -108,12 +108,12 @@ model AuthSession {
 }
 
 model Employee {
-  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId        String         @unique(map: "uq_employees_user_id") @map("user_id") @db.Uuid
+  id            Int            @id @default(autoincrement())
+  userId        Int            @unique(map: "uq_employees_user_id") @map("user_id")
   status        EmployeeStatus @default(ACTIVE)
   deactivatedAt DateTime?      @map("deactivated_at") @db.Timestamptz(6)
   createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime       @default(now()) @map("updated_at") @db.Timestamptz(6)
+  updatedAt     DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user               User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
   areaAssignments    EmployeeAreaAssignment[]
@@ -124,12 +124,12 @@ model Employee {
 }
 
 model Area {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id          Int      @id @default(autoincrement())
   name        String   @unique(map: "uq_areas_name") @db.VarChar(120)
   description String?  @db.Text
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   employeeAreaAssignments EmployeeAreaAssignment[]
   projects                Project[]
@@ -139,15 +139,15 @@ model Area {
 }
 
 model EmployeeAreaAssignment {
-  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  employeeId       String    @map("employee_id") @db.Uuid
-  areaId           String    @map("area_id") @db.Uuid
-  assignedByUserId String    @map("assigned_by_user_id") @db.Uuid
-  endedByUserId    String?   @map("ended_by_user_id") @db.Uuid
+  id               Int       @id @default(autoincrement())
+  employeeId       Int       @map("employee_id")
+  areaId           Int       @map("area_id")
+  assignedByUserId Int       @map("assigned_by_user_id")
+  endedByUserId    Int?      @map("ended_by_user_id")
   assignedAt       DateTime  @default(now()) @map("assigned_at") @db.Timestamptz(6)
   endedAt          DateTime? @map("ended_at") @db.Timestamptz(6)
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   area           Area     @relation(fields: [areaId], references: [id], onDelete: Restrict)
@@ -161,8 +161,8 @@ model EmployeeAreaAssignment {
 }
 
 model Project {
-  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  areaId      String        @map("area_id") @db.Uuid
+  id          Int           @id @default(autoincrement())
+  areaId      Int           @map("area_id")
   name        String        @db.VarChar(160)
   description String?       @db.Text
   status      ProjectStatus @default(ACTIVE)
@@ -170,7 +170,7 @@ model Project {
   endDate     DateTime?     @map("end_date") @db.Date
   closedAt    DateTime?     @map("closed_at") @db.Timestamptz(6)
   createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
+  updatedAt   DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   area        Area                @relation(fields: [areaId], references: [id], onDelete: Restrict)
   memberships ProjectMembership[]
@@ -182,15 +182,15 @@ model Project {
 }
 
 model ProjectMembership {
-  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId        String    @map("project_id") @db.Uuid
-  employeeId       String    @map("employee_id") @db.Uuid
-  assignedByUserId String    @map("assigned_by_user_id") @db.Uuid
-  endedByUserId    String?   @map("ended_by_user_id") @db.Uuid
+  id               Int       @id @default(autoincrement())
+  projectId        Int       @map("project_id")
+  employeeId       Int       @map("employee_id")
+  assignedByUserId Int       @map("assigned_by_user_id")
+  endedByUserId    Int?      @map("ended_by_user_id")
   assignedAt       DateTime  @default(now()) @map("assigned_at") @db.Timestamptz(6)
   unassignedAt     DateTime? @map("unassigned_at") @db.Timestamptz(6)
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   project        Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
   employee       Employee          @relation(fields: [employeeId], references: [id], onDelete: Restrict)
@@ -206,9 +206,9 @@ model ProjectMembership {
 }
 
 model Task {
-  id                   String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId            String       @map("project_id") @db.Uuid
-  assigneeMembershipId String?      @map("assignee_membership_id") @db.Uuid
+  id                   Int          @id @default(autoincrement())
+  projectId            Int          @map("project_id")
+  assigneeMembershipId Int?         @map("assignee_membership_id")
   title                String       @db.VarChar(160)
   description          String?      @db.Text
   priority             TaskPriority @default(MEDIUM)
@@ -217,9 +217,9 @@ model Task {
   dueDate              DateTime     @map("due_date") @db.Date
   estimatedMinutes     Int?         @map("estimated_minutes")
   deletedAt            DateTime?    @map("deleted_at") @db.Timestamptz(6)
-  createdByUserId      String       @map("created_by_user_id") @db.Uuid
+  createdByUserId      Int          @map("created_by_user_id")
   createdAt            DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime     @default(now()) @map("updated_at") @db.Timestamptz(6)
+  updatedAt            DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   project            Project                @relation(fields: [projectId], references: [id], onDelete: Restrict)
   assigneeMembership ProjectMembership?     @relation("TaskAssigneeMembership", fields: [assigneeMembershipId], references: [id], onDelete: Restrict)
@@ -235,11 +235,11 @@ model Task {
 }
 
 model TaskStatusTransition {
-  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  taskId          String      @map("task_id") @db.Uuid
+  id              Int         @id @default(autoincrement())
+  taskId          Int         @map("task_id")
   fromStatus      TaskStatus? @map("from_status")
   toStatus        TaskStatus  @map("to_status")
-  changedByUserId String      @map("changed_by_user_id") @db.Uuid
+  changedByUserId Int         @map("changed_by_user_id")
   changedAt       DateTime    @default(now()) @map("changed_at") @db.Timestamptz(6)
   notes           String?     @db.Text
 
@@ -251,15 +251,15 @@ model TaskStatusTransition {
 }
 
 model TaskWorkSession {
-  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  taskId              String    @map("task_id") @db.Uuid
-  projectMembershipId String    @map("project_membership_id") @db.Uuid
-  startedByUserId     String    @map("started_by_user_id") @db.Uuid
-  endedByUserId       String?   @map("ended_by_user_id") @db.Uuid
+  id                  Int       @id @default(autoincrement())
+  taskId              Int       @map("task_id")
+  projectMembershipId Int       @map("project_membership_id")
+  startedByUserId     Int       @map("started_by_user_id")
+  endedByUserId       Int?      @map("ended_by_user_id")
   startedAt           DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
   endedAt             DateTime? @map("ended_at") @db.Timestamptz(6)
   createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   task              Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
   projectMembership ProjectMembership @relation(fields: [projectMembershipId], references: [id], onDelete: Restrict)
