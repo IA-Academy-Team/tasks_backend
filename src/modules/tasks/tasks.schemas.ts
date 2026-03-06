@@ -63,6 +63,16 @@ export const updateTaskSchema = z.object({
   message: "At least one editable field is required",
 });
 
+export const transitionTaskStatusSchema = z.object({
+  toStatus: z.enum(["assigned", "in_progress", "done"]),
+  notes: nullableTrimmedString
+    .refine((value) => value === null || value.length <= 1000, {
+      message: "notes must contain at most 1000 characters",
+    })
+    .optional(),
+});
+
 export type TasksListQuery = z.infer<typeof tasksListQuerySchema>;
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;
 export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
+export type TransitionTaskStatusInput = z.infer<typeof transitionTaskStatusSchema>;

@@ -10,6 +10,7 @@ import {
   createTaskSchema,
   taskIdParamsSchema,
   tasksListQuerySchema,
+  transitionTaskStatusSchema,
   updateTaskSchema,
 } from "./tasks.schemas.js";
 import {
@@ -17,6 +18,7 @@ import {
   deleteTask,
   getTaskById,
   listTasks,
+  transitionTaskStatus,
   updateTask,
 } from "./tasks.service.js";
 
@@ -84,6 +86,27 @@ tasksRouter.patch("/:taskId", requireRole("admin"), async (req, res, next) => {
   } catch (error) {
     if (error instanceof z.ZodError) {
       next(new AppError(400, "VALIDATION_ERROR", "Invalid task payload", error.flatten()));
+      return;
+    }
+
+    next(error);
+  }
+});
+
+tasksRouter.patch("/:taskId/status", async (req, res, next) => {
+  try {
+    const { taskId } = taskIdParamsSchema.parse(req.params);
+    const payload = transitionTaskStatusSchema.parse(req.body);
+    const authenticatedRequest = req as unknown as AuthenticatedRequest;
+    const result = await transitionTaskStatus(taskId, payload, {
+      userId: authenticatedRequest.auth.user.id,
+      role: authenticatedRequest.auth.user.role,
+    });
+
+    res.status(200).json({ data: result });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(new AppError(400, "VALIDATION_ERROR", "Invalid task status payload", error.flatten()));
       return;
     }
 

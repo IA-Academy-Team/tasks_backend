@@ -1,13 +1,27 @@
 import type { Prisma } from "../../../generated/prisma/client.js";
 import prisma from "../../../prisma/prisma.client.js";
 import { AppError } from "../../shared/http/app-error.js";
-import type { CreateTaskInput, TasksListQuery, UpdateTaskInput } from "./tasks.schemas.js";
+import type { AuthRole } from "../auth/auth.policies.js";
+import type {
+  CreateTaskInput,
+  TasksListQuery,
+  TransitionTaskStatusInput,
+  UpdateTaskInput,
+} from "./tasks.schemas.js";
 
 const TASK_STATUS_NAMES = {
   assigned: "Asignada",
-  inProgress: "En proceso",
+  in_progress: "En proceso",
   done: "Terminada",
 } as const;
+
+type WorkflowStatus = keyof typeof TASK_STATUS_NAMES;
+
+const WORKFLOW_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
+  assigned: ["in_progress"],
+  in_progress: ["done"],
+  done: [],
+};
 
 interface TaskRecord {
   id: number;
@@ -67,6 +81,26 @@ export interface TaskDto {
 export interface DeleteTaskResult {
   id: number;
   deletedAt: string;
+}
+
+interface TransitionTaskActor {
+  userId: number;
+  role: AuthRole;
+}
+
+interface TaskStatusTransitionDto {
+  id: number;
+  taskId: number;
+  fromStatus: string | null;
+  toStatus: string;
+  changedByUserId: number;
+  changedAt: string;
+  notes: string | null;
+}
+
+export interface TransitionTaskStatusResult {
+  task: TaskDto;
+  transition: TaskStatusTransitionDto;
 }
 
 const mapTask = (task: TaskRecord): TaskDto => ({
@@ -148,6 +182,49 @@ const getAssignedStatusId = async () => {
   }
 
   return status.id;
+};
+
+const getWorkflowStatusByName = (statusName: string): WorkflowStatus | null => {
+  if (statusName === TASK_STATUS_NAMES.assigned) return "assigned";
+  if (statusName === TASK_STATUS_NAMES.in_progress) return "in_progress";
+  if (statusName === TASK_STATUS_NAMES.done) return "done";
+  return null;
+};
+
+const getStatusCatalog = async (): Promise<Record<WorkflowStatus, { id: number; name: string }>> => {
+  const statuses = await prisma.taskStatus.findMany({
+    where: {
+      name: {
+        in: [
+          TASK_STATUS_NAMES.assigned,
+          TASK_STATUS_NAMES.in_progress,
+          TASK_STATUS_NAMES.done,
+        ],
+      },
+    },
+    select: {
+      id: true,
+      name: true,
+    },
+  });
+
+  const assigned = statuses.find((status) => status.name === TASK_STATUS_NAMES.assigned);
+  const inProgress = statuses.find((status) => status.name === TASK_STATUS_NAMES.in_progress);
+  const done = statuses.find((status) => status.name === TASK_STATUS_NAMES.done);
+
+  if (!assigned || !inProgress || !done) {
+    throw new AppError(
+      500,
+      "TASK_STATUS_CATALOG_INVALID",
+      "Task statuses catalog is missing required workflow values",
+    );
+  }
+
+  return {
+    assigned: { id: assigned.id, name: assigned.name },
+    in_progress: { id: inProgress.id, name: inProgress.name },
+    done: { id: done.id, name: done.name },
+  };
 };
 
 const validateTaskDates = (plannedStartDate: Date, dueDate: Date) => {
@@ -238,9 +315,82 @@ const ensureValidAssigneeMembership = async (
   return membership.id;
 };
 
+const ensureTaskTransitionAccess = async (taskId: number, actor: TransitionTaskActor) => {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: {
+      id: true,
+      projectId: true,
+      assigneeMembershipId: true,
+      taskStatusId: true,
+      deletedAt: true,
+      status: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+      assigneeMembership: {
+        select: {
+          id: true,
+          projectId: true,
+          unassignedAt: true,
+          employee: {
+            select: {
+              id: true,
+              userId: true,
+              user: {
+                select: {
+                  isActive: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!task) {
+    throw new AppError(404, "TASK_NOT_FOUND", "Task not found");
+  }
+
+  if (task.deletedAt) {
+    throw new AppError(409, "TASK_SOFT_DELETED", "Task is deleted and cannot be moved");
+  }
+
+  if (task.assigneeMembership && task.assigneeMembership.unassignedAt !== null) {
+    throw new AppError(
+      409,
+      "TASK_ASSIGNEE_MEMBERSHIP_INACTIVE",
+      "Task assignee membership is no longer active",
+    );
+  }
+
+  if (task.assigneeMembership && !task.assigneeMembership.employee.user.isActive) {
+    throw new AppError(
+      409,
+      "TASK_ASSIGNEE_INACTIVE",
+      "Task assignee employee is inactive",
+    );
+  }
+
+  if (actor.role === "employee") {
+    if (!task.assigneeMembership || task.assigneeMembership.employee.userId !== actor.userId) {
+      throw new AppError(
+        403,
+        "TASK_TRANSITION_FORBIDDEN",
+        "Employee can only move tasks assigned to their active membership",
+      );
+    }
+  }
+
+  return task;
+};
+
 const getStatusNameByFilter = (status: TasksListQuery["status"]): string | null => {
   if (status === "assigned") return TASK_STATUS_NAMES.assigned;
-  if (status === "in_progress") return TASK_STATUS_NAMES.inProgress;
+  if (status === "in_progress") return TASK_STATUS_NAMES.in_progress;
   if (status === "done") return TASK_STATUS_NAMES.done;
   return null;
 };
@@ -316,20 +466,33 @@ export const createTask = async (
     payload.assigneeMembershipId ?? null,
   );
 
-  const createdTask = await prisma.task.create({
-    data: {
-      projectId: payload.projectId,
-      taskStatusId: assignedStatusId,
-      taskPriorityId: payload.taskPriorityId,
-      title: payload.title,
-      description: payload.description ?? null,
-      plannedStartDate: payload.plannedStartDate,
-      dueDate: payload.dueDate,
-      estimatedMinutes: payload.estimatedMinutes ?? null,
-      assigneeMembershipId,
-      createdByUserId: actorUserId,
-    },
-    select: { id: true },
+  const createdTask = await prisma.$transaction(async (tx) => {
+    const task = await tx.task.create({
+      data: {
+        projectId: payload.projectId,
+        taskStatusId: assignedStatusId,
+        taskPriorityId: payload.taskPriorityId,
+        title: payload.title,
+        description: payload.description ?? null,
+        plannedStartDate: payload.plannedStartDate,
+        dueDate: payload.dueDate,
+        estimatedMinutes: payload.estimatedMinutes ?? null,
+        assigneeMembershipId,
+        createdByUserId: actorUserId,
+      },
+      select: { id: true },
+    });
+
+    await tx.taskStatusTransition.create({
+      data: {
+        taskId: task.id,
+        fromStatusId: null,
+        toStatusId: assignedStatusId,
+        changedByUserId: actorUserId,
+      },
+    });
+
+    return task;
   });
 
   return getTaskById(createdTask.id);
@@ -402,6 +565,84 @@ export const updateTask = async (
   });
 
   return getTaskById(taskId);
+};
+
+export const transitionTaskStatus = async (
+  taskId: number,
+  payload: TransitionTaskStatusInput,
+  actor: TransitionTaskActor,
+): Promise<TransitionTaskStatusResult> => {
+  const task = await ensureTaskTransitionAccess(taskId, actor);
+  await ensureProjectAvailableForTask(task.projectId);
+
+  const currentWorkflowStatus = getWorkflowStatusByName(task.status.name);
+  if (!currentWorkflowStatus) {
+    throw new AppError(
+      409,
+      "TASK_STATUS_NOT_WORKFLOW",
+      "Current task status is outside the workflow",
+    );
+  }
+
+  if (currentWorkflowStatus === payload.toStatus) {
+    throw new AppError(409, "TASK_STATUS_UNCHANGED", "Task is already in requested status");
+  }
+
+  const allowedTargets = WORKFLOW_TRANSITIONS[currentWorkflowStatus];
+  if (!allowedTargets.includes(payload.toStatus)) {
+    throw new AppError(
+      409,
+      "TASK_TRANSITION_NOT_ALLOWED",
+      `Transition from ${task.status.name} to ${TASK_STATUS_NAMES[payload.toStatus]} is not allowed`,
+    );
+  }
+
+  if (payload.toStatus !== "assigned" && task.assigneeMembershipId === null) {
+    throw new AppError(
+      409,
+      "TASK_ASSIGNEE_REQUIRED",
+      "Task must be assigned to an active member before moving to this status",
+    );
+  }
+
+  const statusCatalog = await getStatusCatalog();
+  const targetStatus = statusCatalog[payload.toStatus];
+  const updatedAt = new Date();
+
+  const createdTransition = await prisma.$transaction(async (tx) => {
+    await tx.task.update({
+      where: { id: taskId },
+      data: {
+        taskStatusId: targetStatus.id,
+        updatedAt,
+      },
+    });
+
+    return tx.taskStatusTransition.create({
+      data: {
+        taskId,
+        fromStatusId: task.taskStatusId,
+        toStatusId: targetStatus.id,
+        changedByUserId: actor.userId,
+        changedAt: updatedAt,
+        notes: payload.notes ?? null,
+      },
+    });
+  });
+
+  const updatedTask = await getTaskById(taskId);
+  return {
+    task: updatedTask,
+    transition: {
+      id: createdTransition.id,
+      taskId: createdTransition.taskId,
+      fromStatus: task.status.name,
+      toStatus: targetStatus.name,
+      changedByUserId: createdTransition.changedByUserId,
+      changedAt: createdTransition.changedAt.toISOString(),
+      notes: createdTransition.notes ?? null,
+    },
+  };
 };
 
 export const deleteTask = async (taskId: number): Promise<DeleteTaskResult> => {
