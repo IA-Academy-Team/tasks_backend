@@ -8,16 +8,23 @@ import prisma from "../../../prisma/prisma.client.js";
 import {
   BACKEND_URL,
   BETTER_AUTH_BASE_PATH,
-  FRONTEND_ORIGIN,
+  FRONTEND_ORIGINS,
   NODE_ENV,
 } from "./env.config.js";
 
 const ALLOWED_EMAIL_DOMAINS = new Set([
   "campuslands.com",
   "fundacioncampuslands.com",
+  ...(NODE_ENV === "production" ? [] : ["taskapp.local"]),
 ]);
 
 const DOMAIN_ERROR_CODE = "EMAIL_DOMAIN_NOT_ALLOWED";
+const INACTIVE_USER_ERROR_CODE = "USER_INACTIVE";
+
+const toNumericId = (value: string | number) => {
+  if (typeof value === "number") return value;
+  return Number(value);
+};
 
 const isAllowedEmail = (email?: string | null) => {
   if (!email) return false;
@@ -29,7 +36,7 @@ export const auth = betterAuth({
   appName: "taskapp",
   database: prismaAdapter(prisma, {
     provider: "postgresql",
-    usePlural: true,
+    usePlural: false,
   }),
 
   logger: {
@@ -46,8 +53,7 @@ export const auth = betterAuth({
   basePath: BETTER_AUTH_BASE_PATH,
 
   trustedOrigins: [
-    FRONTEND_ORIGIN,
-    "http://127.0.0.1:5173",
+    ...FRONTEND_ORIGINS,
   ],
 
   user: {
@@ -180,10 +186,27 @@ export const auth = betterAuth({
       create: {
         async before(session, ctx) {
           if (!ctx) return;
-          const user = await ctx.context.internalAdapter.findUserById(
-            session.userId
-          );
-          if (!user || isAllowedEmail(user.email)) return;
+          const userId = toNumericId(session.userId);
+          const user = Number.isFinite(userId)
+            ? await prisma.user.findUnique({
+                where: { id: userId },
+                select: {
+                  email: true,
+                  isActive: true,
+                },
+              })
+            : null;
+
+          if (!user) return;
+
+          if (user.isActive === false) {
+            throw new APIError("FORBIDDEN", {
+              message: INACTIVE_USER_ERROR_CODE,
+              code: INACTIVE_USER_ERROR_CODE,
+            });
+          }
+
+          if (isAllowedEmail(user.email)) return;
 
           throw new APIError("FORBIDDEN", {
             message: DOMAIN_ERROR_CODE,

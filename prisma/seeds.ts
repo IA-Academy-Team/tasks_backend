@@ -1,3 +1,4 @@
+import bcrypt from "bcrypt";
 import prisma from "./prisma.client.js";
 
 const roles = [
@@ -183,6 +184,10 @@ async function ensureUser(user: UserSeed) {
 }
 
 async function ensureAccount(userId: number, providerId: string, providerAccountId: string, password?: string) {
+  const passwordValue = providerId === "credential" && password
+    ? await bcrypt.hash(password, 10)
+    : password ?? null;
+
   return prisma.account.upsert({
     where: {
       providerId_providerAccountId: {
@@ -192,15 +197,15 @@ async function ensureAccount(userId: number, providerId: string, providerAccount
     },
     update: {
       userId,
-      scope: providerId === "credentials" ? "app" : "openid profile email",
-      password: password ?? null,
+      scope: providerId === "credential" ? "app" : "openid profile email",
+      password: passwordValue,
     },
     create: {
       userId,
       providerId,
       providerAccountId,
-      scope: providerId === "credentials" ? "app" : "openid profile email",
-      password: password ?? null,
+      scope: providerId === "credential" ? "app" : "openid profile email",
+      password: passwordValue,
     },
   });
 }
@@ -502,12 +507,12 @@ async function main() {
   const mateoUser = users.get("mateo.soporte@taskapp.local")!;
   const valentinaUser = users.get("valentina.inactiva@taskapp.local")!;
 
-  await ensureAccount(adminUser.id, "credentials", adminUser.email, "admin123");
-  await ensureAccount(lauraUser.id, "credentials", lauraUser.email, "laura123");
+  await ensureAccount(adminUser.id, "credential", String(adminUser.id), "admin123");
+  await ensureAccount(lauraUser.id, "credential", String(lauraUser.id), "laura123");
   await ensureAccount(carlosUser.id, "google", "google-carlos-desarrollo");
-  await ensureAccount(sofiaUser.id, "credentials", sofiaUser.email, "sofia123");
+  await ensureAccount(sofiaUser.id, "credential", String(sofiaUser.id), "sofia123");
   await ensureAccount(mateoUser.id, "github", "github-mateo-soporte");
-  await ensureAccount(valentinaUser.id, "credentials", valentinaUser.email, "valentina123");
+  await ensureAccount(valentinaUser.id, "credential", String(valentinaUser.id), "valentina123");
 
   await ensureSession(adminUser.id, "sess-admin-principal", 30, "Seeder Admin Agent");
   await ensureSession(lauraUser.id, "sess-laura-operaciones", 15, "Seeder Operations Client");

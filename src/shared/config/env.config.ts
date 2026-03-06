@@ -47,10 +47,16 @@ export const BETTER_AUTH_BASE_PATH = normalize(
   `${API_PREFIX}/auth/handler`
 );
 
-const detectLocalhost = (value: string) =>
-  value.includes("localhost") || value.includes("127.0.0.1");
+const FRONTEND_ORIGIN_CANDIDATES = NODE_ENV === "production"
+  ? [FRONTEND_URL, DEV_HOST, "http://127.0.0.1:5173"]
+  : [DEV_HOST, FRONTEND_URL, "http://127.0.0.1:5173"];
 
-export const IS_LOCALHOST = detectLocalhost(FRONTEND_URL) || detectLocalhost(DEV_HOST);
+export const FRONTEND_ORIGINS = Array.from(
+  new Set(
+    FRONTEND_ORIGIN_CANDIDATES
+      .map((origin) => normalize(origin))
+      .filter(Boolean),
+  ),
+);
 
-// Prefer the actual frontend origin for CORS/websockets in production.
-export const FRONTEND_ORIGIN = IS_LOCALHOST ? (FRONTEND_URL || DEV_HOST) : FRONTEND_URL;
+export const FRONTEND_ORIGIN = FRONTEND_ORIGINS[0] ?? FRONTEND_URL;

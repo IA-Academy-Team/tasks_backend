@@ -1,5 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
-import { FRONTEND_ORIGIN } from "../../shared/config/env.config.js";
+import {
+  FRONTEND_ORIGIN,
+  FRONTEND_ORIGINS,
+} from "../../shared/config/env.config.js";
 
 const CORS_HEADERS = [
   "Content-Type",
@@ -15,7 +18,7 @@ export const corsMiddleware = (
   next: NextFunction,
 ) => {
   const requestOrigin = req.headers.origin;
-  const allowOrigin = requestOrigin && requestOrigin === FRONTEND_ORIGIN
+  const allowOrigin = requestOrigin && FRONTEND_ORIGINS.includes(requestOrigin)
     ? requestOrigin
     : FRONTEND_ORIGIN;
 
