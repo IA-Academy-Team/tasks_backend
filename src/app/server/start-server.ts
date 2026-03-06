@@ -9,7 +9,7 @@ export const startServer = async () => {
   await new Promise<void>((resolve) => {
     server.listen(PORT, () => {
       console.log(`Server running at http://localhost:${PORT}`);
-      console.log(`Health check at http://localhost:${PORT}/api/v1/health`);
+      console.log(`Health check at http://localhost:${PORT}/api/health`);
       resolve();
     });
   });
