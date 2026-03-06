@@ -4,11 +4,12 @@ export type AuthResource =
   | "dashboard"
   | "projects"
   | "projectBoard"
+  | "profile"
   | "members";
 
 const ROLE_POLICIES: Record<AuthRole, AuthResource[]> = {
-  admin: ["dashboard", "projects", "projectBoard", "members"],
-  employee: ["dashboard", "projects", "projectBoard"],
+  admin: ["dashboard", "projects", "projectBoard", "profile", "members"],
+  employee: ["dashboard", "projects", "projectBoard", "profile"],
 };
 
 export const getAllowedResourcesByRole = (role: AuthRole): AuthResource[] =>
@@ -18,4 +19,3 @@ export const canAccessResource = (
   role: AuthRole,
   resource: AuthResource,
 ): boolean => ROLE_POLICIES[role].includes(resource);
-
