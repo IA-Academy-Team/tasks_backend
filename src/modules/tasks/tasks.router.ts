@@ -17,6 +17,7 @@ import {
   createTask,
   deleteTask,
   getTaskById,
+  getTaskHistory,
   listTasks,
   transitionTaskStatus,
   updateTask,
@@ -48,6 +49,22 @@ tasksRouter.get("/:taskId", async (req, res, next) => {
     const task = await getTaskById(taskId);
 
     res.status(200).json({ data: task });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(new AppError(400, "VALIDATION_ERROR", "Invalid task identifier", error.flatten()));
+      return;
+    }
+
+    next(error);
+  }
+});
+
+tasksRouter.get("/:taskId/history", async (req, res, next) => {
+  try {
+    const { taskId } = taskIdParamsSchema.parse(req.params);
+    const history = await getTaskHistory(taskId);
+
+    res.status(200).json({ data: history });
   } catch (error) {
     if (error instanceof z.ZodError) {
       next(new AppError(400, "VALIDATION_ERROR", "Invalid task identifier", error.flatten()));

@@ -53,6 +53,14 @@ interface TaskRecord {
       };
     };
   } | null;
+  workSessions: Array<{
+    id: number;
+    startedAt: Date;
+    endedAt: Date | null;
+  }>;
+  statusTransitions: Array<{
+    changedAt: Date;
+  }>;
 }
 
 export interface TaskDto {
@@ -68,6 +76,12 @@ export interface TaskDto {
   plannedStartDate: string;
   dueDate: string;
   estimatedMinutes: number | null;
+  actualMinutes: number;
+  deviationMinutes: number | null;
+  isEstimateDelayed: boolean | null;
+  isDateOverdue: boolean;
+  completedAt: string | null;
+  hasOpenWorkSession: boolean;
   assigneeMembershipId: number | null;
   assigneeEmployeeId: number | null;
   assigneeName: string | null;
@@ -103,61 +117,173 @@ export interface TransitionTaskStatusResult {
   transition: TaskStatusTransitionDto;
 }
 
-const mapTask = (task: TaskRecord): TaskDto => ({
-  id: task.id,
-  projectId: task.projectId,
-  projectName: task.project.name,
-  taskStatusId: task.taskStatusId,
-  status: task.status.name,
-  taskPriorityId: task.taskPriorityId,
-  priority: task.priority.name,
-  title: task.title,
-  description: task.description ?? null,
-  plannedStartDate: task.plannedStartDate.toISOString().slice(0, 10),
-  dueDate: task.dueDate.toISOString().slice(0, 10),
-  estimatedMinutes: task.estimatedMinutes ?? null,
-  assigneeMembershipId: task.assigneeMembershipId,
-  assigneeEmployeeId: task.assigneeMembership?.employee.id ?? null,
-  assigneeName: task.assigneeMembership?.employee.user.name ?? null,
-  assigneeEmail: task.assigneeMembership?.employee.user.email ?? null,
-  deletedAt: task.deletedAt?.toISOString() ?? null,
-  createdByUserId: task.createdByUserId,
-  createdAt: task.createdAt.toISOString(),
-  updatedAt: task.updatedAt.toISOString(),
-});
+export interface TaskHistoryEntryDto {
+  id: number;
+  taskId: number;
+  fromStatus: string | null;
+  toStatus: string;
+  changedAt: string;
+  changedByUserId: number;
+  changedByName: string;
+  changedByEmail: string;
+  notes: string | null;
+}
 
-const getTaskOrThrow = async (taskId: number): Promise<TaskRecord> => {
-  const task = await prisma.task.findUnique({
-    where: { id: taskId },
-    include: {
-      project: {
-        select: {
-          id: true,
-          name: true,
-          status: { select: { id: true, name: true } },
-        },
-      },
+const taskMetricsInclude = {
+  project: {
+    select: {
+      id: true,
+      name: true,
       status: { select: { id: true, name: true } },
-      priority: { select: { id: true, name: true } },
-      assigneeMembership: {
+    },
+  },
+  status: { select: { id: true, name: true } },
+  priority: { select: { id: true, name: true } },
+  assigneeMembership: {
+    select: {
+      id: true,
+      employee: {
         select: {
           id: true,
-          employee: {
+          user: {
             select: {
               id: true,
-              user: {
-                select: {
-                  id: true,
-                  name: true,
-                  email: true,
-                  isActive: true,
-                },
-              },
+              name: true,
+              email: true,
+              isActive: true,
             },
           },
         },
       },
     },
+  },
+  workSessions: {
+    select: {
+      id: true,
+      startedAt: true,
+      endedAt: true,
+    },
+  },
+  statusTransitions: {
+    where: {
+      toStatus: {
+        name: TASK_STATUS_NAMES.done,
+      },
+    },
+    orderBy: {
+      changedAt: "desc",
+    },
+    take: 1,
+    select: {
+      changedAt: true,
+    },
+  },
+} satisfies Prisma.TaskInclude;
+
+const toIsoDate = (value: Date): string => value.toISOString().slice(0, 10);
+
+const toUtcDayNumber = (value: Date): number => {
+  const iso = toIsoDate(value);
+  const year = Number(iso.slice(0, 4));
+  const month = Number(iso.slice(5, 7));
+  const day = Number(iso.slice(8, 10));
+  return Date.UTC(year, month - 1, day);
+};
+
+const computeActualMinutes = (
+  workSessions: TaskRecord["workSessions"],
+  now: Date,
+): { totalMinutes: number; hasOpen: boolean } => {
+  let totalMs = 0;
+  let hasOpen = false;
+
+  for (const session of workSessions) {
+    const startedAt = session.startedAt.getTime();
+    const endedAt = (session.endedAt ?? now).getTime();
+    if (!session.endedAt) {
+      hasOpen = true;
+    }
+
+    if (endedAt > startedAt) {
+      totalMs += endedAt - startedAt;
+    }
+  }
+
+  return {
+    totalMinutes: Math.max(0, Math.round(totalMs / 60000)),
+    hasOpen,
+  };
+};
+
+const computeTaskMetrics = (task: TaskRecord, now: Date) => {
+  const completedAtDate = task.statusTransitions[0]?.changedAt ?? null;
+  const completedAt = completedAtDate?.toISOString() ?? null;
+  const { totalMinutes: actualMinutes, hasOpen: hasOpenWorkSession } = computeActualMinutes(
+    task.workSessions,
+    now,
+  );
+  const deviationMinutes = task.estimatedMinutes === null
+    ? null
+    : actualMinutes - task.estimatedMinutes;
+  const isEstimateDelayed = task.estimatedMinutes === null
+    ? null
+    : actualMinutes > task.estimatedMinutes;
+  const dueDay = toUtcDayNumber(task.dueDate);
+  const fallbackCompletionDate = task.status.name === TASK_STATUS_NAMES.done
+    ? task.updatedAt
+    : now;
+  const referenceDay = completedAtDate
+    ? toUtcDayNumber(completedAtDate)
+    : toUtcDayNumber(fallbackCompletionDate);
+  const isDateOverdue = referenceDay > dueDay;
+
+  return {
+    actualMinutes,
+    deviationMinutes,
+    isEstimateDelayed,
+    isDateOverdue,
+    completedAt,
+    hasOpenWorkSession,
+  };
+};
+
+const mapTask = (task: TaskRecord, now: Date): TaskDto => {
+  const metrics = computeTaskMetrics(task, now);
+
+  return {
+    id: task.id,
+    projectId: task.projectId,
+    projectName: task.project.name,
+    taskStatusId: task.taskStatusId,
+    status: task.status.name,
+    taskPriorityId: task.taskPriorityId,
+    priority: task.priority.name,
+    title: task.title,
+    description: task.description ?? null,
+    plannedStartDate: toIsoDate(task.plannedStartDate),
+    dueDate: toIsoDate(task.dueDate),
+    estimatedMinutes: task.estimatedMinutes ?? null,
+    actualMinutes: metrics.actualMinutes,
+    deviationMinutes: metrics.deviationMinutes,
+    isEstimateDelayed: metrics.isEstimateDelayed,
+    isDateOverdue: metrics.isDateOverdue,
+    completedAt: metrics.completedAt,
+    hasOpenWorkSession: metrics.hasOpenWorkSession,
+    assigneeMembershipId: task.assigneeMembershipId,
+    assigneeEmployeeId: task.assigneeMembership?.employee.id ?? null,
+    assigneeName: task.assigneeMembership?.employee.user.name ?? null,
+    assigneeEmail: task.assigneeMembership?.employee.user.email ?? null,
+    deletedAt: task.deletedAt?.toISOString() ?? null,
+    createdByUserId: task.createdByUserId,
+    createdAt: task.createdAt.toISOString(),
+    updatedAt: task.updatedAt.toISOString(),
+  };
+};
+
+const getTaskOrThrow = async (taskId: number): Promise<TaskRecord> => {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: taskMetricsInclude,
   });
 
   if (!task) {
@@ -414,43 +540,16 @@ export const listTasks = async (query: TasksListQuery): Promise<TaskDto[]> => {
   const tasks = await prisma.task.findMany({
     where,
     orderBy: [{ dueDate: "asc" }, { id: "desc" }],
-    include: {
-      project: {
-        select: {
-          id: true,
-          name: true,
-          status: { select: { id: true, name: true } },
-        },
-      },
-      status: { select: { id: true, name: true } },
-      priority: { select: { id: true, name: true } },
-      assigneeMembership: {
-        select: {
-          id: true,
-          employee: {
-            select: {
-              id: true,
-              user: {
-                select: {
-                  id: true,
-                  name: true,
-                  email: true,
-                  isActive: true,
-                },
-              },
-            },
-          },
-        },
-      },
-    },
+    include: taskMetricsInclude,
   });
 
-  return tasks.map((task) => mapTask(task as unknown as TaskRecord));
+  const now = new Date();
+  return tasks.map((task) => mapTask(task as unknown as TaskRecord, now));
 };
 
 export const getTaskById = async (taskId: number): Promise<TaskDto> => {
   const task = await getTaskOrThrow(taskId);
-  return mapTask(task);
+  return mapTask(task, new Date());
 };
 
 export const createTask = async (
@@ -610,6 +709,60 @@ export const transitionTaskStatus = async (
   const updatedAt = new Date();
 
   const createdTransition = await prisma.$transaction(async (tx) => {
+    if (payload.toStatus === "in_progress") {
+      const openSession = await tx.taskWorkSession.findFirst({
+        where: {
+          taskId,
+          endedAt: null,
+        },
+        select: { id: true },
+      });
+
+      if (openSession) {
+        throw new AppError(
+          409,
+          "TASK_WORK_SESSION_ALREADY_OPEN",
+          "Task already has an open work session",
+        );
+      }
+
+      await tx.taskWorkSession.create({
+        data: {
+          taskId,
+          projectMembershipId: task.assigneeMembershipId!,
+          startedByUserId: actor.userId,
+          startedAt: updatedAt,
+        },
+      });
+    }
+
+    if (payload.toStatus === "done") {
+      const openSession = await tx.taskWorkSession.findFirst({
+        where: {
+          taskId,
+          endedAt: null,
+        },
+        select: { id: true },
+      });
+
+      if (!openSession) {
+        throw new AppError(
+          409,
+          "TASK_WORK_SESSION_NOT_OPEN",
+          "Task cannot be finished without an open work session",
+        );
+      }
+
+      await tx.taskWorkSession.update({
+        where: { id: openSession.id },
+        data: {
+          endedAt: updatedAt,
+          endedByUserId: actor.userId,
+          updatedAt,
+        },
+      });
+    }
+
     await tx.task.update({
       where: { id: taskId },
       data: {
@@ -643,6 +796,42 @@ export const transitionTaskStatus = async (
       notes: createdTransition.notes ?? null,
     },
   };
+};
+
+export const getTaskHistory = async (taskId: number): Promise<TaskHistoryEntryDto[]> => {
+  await getTaskOrThrow(taskId);
+
+  const history = await prisma.taskStatusTransition.findMany({
+    where: { taskId },
+    orderBy: { changedAt: "asc" },
+    select: {
+      id: true,
+      taskId: true,
+      changedAt: true,
+      changedByUserId: true,
+      notes: true,
+      fromStatus: { select: { name: true } },
+      toStatus: { select: { name: true } },
+      changedByUser: {
+        select: {
+          name: true,
+          email: true,
+        },
+      },
+    },
+  });
+
+  return history.map((entry) => ({
+    id: entry.id,
+    taskId: entry.taskId,
+    fromStatus: entry.fromStatus?.name ?? null,
+    toStatus: entry.toStatus.name,
+    changedAt: entry.changedAt.toISOString(),
+    changedByUserId: entry.changedByUserId,
+    changedByName: entry.changedByUser.name,
+    changedByEmail: entry.changedByUser.email,
+    notes: entry.notes ?? null,
+  }));
 };
 
 export const deleteTask = async (taskId: number): Promise<DeleteTaskResult> => {
