@@ -5,9 +5,17 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon --watch src --ext ts --exec \"tsx src/index.ts\"",
-    "build": "tsc -p tsconfig.build.json"
+    "dev:swagger": "npm run swagger:generate && npm run dev",
+    "debug": "node --inspect=9229 --enable-source-maps --import tsx src/index.ts",
+    "debug:swagger": "npm run swagger:generate && npm run debug",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist",
+    "swagger": "npm run swagger:generate",
+    "swagger:guide": "npm run swagger:generate && node --import tsx src/shared/scripts/generate-swagger-endpoint-guide.ts",
+    "prisma:migrate:seed": "node --import tsx prisma/seeds.ts",
+    "swagger:generate": "node --import tsx src/shared/scripts/generate-swagger.ts"
   },
   "keywords": [],
   "author": "",
