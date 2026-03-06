@@ -5,22 +5,38 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon --watch src --ext ts --exec \"tsx src/index.ts\""
+    "dev": "nodemon --watch src --ext ts --exec \"tsx src/index.ts\"",
+    "dev:swagger": "npm run swagger:generate && npm run dev",
+    "debug": "node --inspect=9229 --enable-source-maps --import tsx src/index.ts",
+    "debug:swagger": "npm run swagger:generate && npm run debug",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist",
+    "swagger": "npm run swagger:generate",
+    "swagger:guide": "npm run swagger:generate && node --import tsx src/shared/scripts/generate-swagger-endpoint-guide.ts",
+    "prisma:migrate:seed": "node --import tsx prisma/seeds.ts",
+    "swagger:generate": "node --import tsx src/shared/scripts/generate-swagger.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@better-auth/prisma-adapter": "^1.5.3",
     "@prisma/adapter-pg": "^7.4.2",
     "@prisma/client": "^7.4.2",
+    "bcrypt": "^6.0.0",
+    "better-auth": "^1.5.3",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
-    "pg": "^8.20.0"
+    "nodemailer": "^8.0.1",
+    "pg": "^8.20.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
     "@types/express": "^5.0.6",
     "@types/node": "^25.3.3",
+    "@types/nodemailer": "^7.0.11",
     "@types/pg": "^8.18.0",
     "morgan": "^1.10.1",
     "nodemon": "^3.1.14",
