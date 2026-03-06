@@ -37,7 +37,7 @@ export const PORT = Number(normalize(process.env.PORT, '3000'));
 export const PROD_HOST = normalize(process.env.PROD_HOST, 'https://sdfsfasdfjls.com.co');
 export const DEV_HOST = normalize(process.env.DEV_HOST, 'http://localhost:13131313');
 export const NODE_ENV = normalize(process.env.NODE_ENV, 'development');
-export const API_PREFIX = normalize(process.env.API_PREFIX, '/api');
+export const API_PREFIX = normalize(process.env.API_PREFIX, '/api/v1');
 export const BACKEND_URL = normalize(
   process.env.BACKEND_URL || process.env.BETTER_AUTH_URL,
   `http://localhost:${PORT}`
@@ -47,10 +47,16 @@ export const BETTER_AUTH_BASE_PATH = normalize(
   `${API_PREFIX}/auth/handler`
 );
 
-const detectLocalhost = (value: string) =>
-  value.includes("localhost") || value.includes("127.0.0.1");
+const FRONTEND_ORIGIN_CANDIDATES = NODE_ENV === "production"
+  ? [FRONTEND_URL, DEV_HOST, "http://127.0.0.1:5173"]
+  : [DEV_HOST, FRONTEND_URL, "http://127.0.0.1:5173"];
 
-export const IS_LOCALHOST = detectLocalhost(FRONTEND_URL) || detectLocalhost(DEV_HOST);
+export const FRONTEND_ORIGINS = Array.from(
+  new Set(
+    FRONTEND_ORIGIN_CANDIDATES
+      .map((origin) => normalize(origin))
+      .filter(Boolean),
+  ),
+);
 
-// Prefer the actual frontend origin for CORS/websockets in production.
-export const FRONTEND_ORIGIN = IS_LOCALHOST ? (FRONTEND_URL || DEV_HOST) : FRONTEND_URL;
+export const FRONTEND_ORIGIN = FRONTEND_ORIGINS[0] ?? FRONTEND_URL;
