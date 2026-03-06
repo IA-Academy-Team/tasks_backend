@@ -14,7 +14,7 @@ export const createApp = () => {
   const app = express();
 
   app.use(requestIdMiddleware);
-  app.use(morgan(":method :url :status :response-time ms - reqId=:requestId"));
+  app.use(morgan("dev"));
   app.disable("x-powered-by");
 
   app.use(corsMiddleware);
