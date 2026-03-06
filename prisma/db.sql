@@ -1,4 +1,4 @@
--- Database: traskapp
+-- Database: taskapp
 select * from status;
 select * from role;
 select * from company;
@@ -28,9 +28,9 @@ select * from audit;
 
 -- DDL: Crear base de datos y tablas
 
--- DROP DATABASE IF EXISTS traskapp_dev;
-CREATE DATABASE IF NOT EXISTS traskapp_dev;
-\c traskapp_dev;
+-- DROP DATABASE taskapp_dev;
+CREATE DATABASE taskapp_dev;
+\c taskapp_dev;
 \dt;
 
 -- ==============================
@@ -38,41 +38,27 @@ CREATE DATABASE IF NOT EXISTS traskapp_dev;
 -- ==============================
 CREATE TABLE roles (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(50) NOT NULL,
-    description TEXT,
-    CONSTRAINT uq_roles_name UNIQUE (name)
+    name VARCHAR(50) NOT NULL UNIQUE
 );
 
 CREATE TABLE employee_statuses (
     id SERIAL PRIMARY KEY,
-    code VARCHAR(30) NOT NULL,
-    name VARCHAR(50) NOT NULL,
-    description TEXT,
-    CONSTRAINT uq_employee_statuses_code UNIQUE (code)
+    name VARCHAR(50) NOT NULL
 );
 
 CREATE TABLE project_statuses (
     id SERIAL PRIMARY KEY,
-    code VARCHAR(30) NOT NULL,
-    name VARCHAR(50) NOT NULL,
-    description TEXT,
-    CONSTRAINT uq_project_statuses_code UNIQUE (code)
+    name VARCHAR(50) NOT NULL
 );
 
 CREATE TABLE task_statuses (
     id SERIAL PRIMARY KEY,
-    code VARCHAR(30) NOT NULL,
-    name VARCHAR(50) NOT NULL,
-    description TEXT,
-    CONSTRAINT uq_task_statuses_code UNIQUE (code)
+    name VARCHAR(50) NOT NULL
 );
 
 CREATE TABLE task_priorities (
     id SERIAL PRIMARY KEY,
-    code VARCHAR(30) NOT NULL,
-    name VARCHAR(50) NOT NULL,
-    description TEXT,
-    CONSTRAINT uq_task_priorities_code UNIQUE (code)
+    name VARCHAR(50) NOT NULL
 );
 
 -- ==============================
@@ -417,85 +403,37 @@ CREATE UNIQUE INDEX uq_task_work_sessions_open_task
     ON task_work_sessions (task_id)
     WHERE ended_at IS NULL;
 
-CREATE OR REPLACE VIEW task_execution_summary AS
-WITH session_totals AS (
-    SELECT
-        tws.task_id,
-        MIN(tws.started_at) AS first_started_at,
-        MAX(tws.ended_at) AS last_ended_at,
-        SUM(EXTRACT(EPOCH FROM (COALESCE(tws.ended_at, CURRENT_TIMESTAMP) - tws.started_at))) / 60.0
-            AS actual_minutes
-    FROM task_work_sessions tws
-    GROUP BY tws.task_id
-)
-SELECT
-    t.id AS task_id,
-    t.project_id,
-    p.area_id,
-    pm.employee_id AS assignee_employee_id,
-    t.title,
-    ts.code AS status,
-    tp.code AS priority,
-    t.planned_start_date,
-    t.due_date,
-    t.estimated_minutes,
-    st.first_started_at,
-    st.last_ended_at,
-    COALESCE(ROUND(st.actual_minutes::NUMERIC, 2), 0) AS actual_minutes,
-    CASE
-        WHEN t.estimated_minutes IS NULL THEN 'UNASSESSED'
-        WHEN COALESCE(st.actual_minutes, 0) > t.estimated_minutes THEN 'LATE'
-        WHEN ts.code = 'DONE' THEN 'ON_TIME'
-        ELSE 'UNASSESSED'
-    END AS compliance_status,
-    CASE
-        WHEN t.estimated_minutes IS NULL THEN NULL
-        ELSE ROUND((COALESCE(st.actual_minutes, 0) - t.estimated_minutes)::NUMERIC, 2)
-    END AS variance_minutes
-FROM tasks t
-JOIN projects p
-    ON p.id = t.project_id
-JOIN task_statuses ts
-    ON ts.id = t.task_status_id
-JOIN task_priorities tp
-    ON tp.id = t.task_priority_id
-LEFT JOIN project_memberships pm
-    ON pm.id = t.assignee_membership_id
-LEFT JOIN session_totals st
-    ON st.task_id = t.id
-WHERE t.deleted_at IS NULL;
-
-INSERT INTO roles (id, name, description)
+INSERT INTO roles (id, name)
 VALUES
-    (1, 'admin', 'Administrador del sistema'),
-    (2, 'employee', 'Empleado operativo')
+    (1, 'admin'),
+    (2, 'employee')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO employee_statuses (id, code, name, description)
+INSERT INTO employee_statuses (id, name)
 VALUES
-    (1, 'ACTIVE', 'Activo', 'Empleado habilitado para operar'),
-    (2, 'INACTIVE', 'Inactivo', 'Empleado deshabilitado para operar')
+    (1,'Activo'),
+    (2, 'Inactivo')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO project_statuses (id, code, name, description)
+INSERT INTO project_statuses (id, name)
 VALUES
-    (1, 'ACTIVE', 'Activo', 'Proyecto operativo'),
-    (2, 'CLOSED', 'Cerrado', 'Proyecto finalizado'),
-    (3, 'CANCELLED', 'Cancelado', 'Proyecto cancelado')
+    (1, 'Activo'),
+    (2, 'Cerrado'),
+    (3, 'Cancelado')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO task_statuses (id, code, name, description)
+INSERT INTO task_statuses (id, name)
 VALUES
-    (1, 'ASSIGNED', 'Asignada', 'Tarea asignada pendiente de iniciar'),
-    (2, 'IN_PROGRESS', 'En proceso', 'Tarea en ejecucion'),
-    (3, 'DONE', 'Terminada', 'Tarea completada')
+    (1, 'Asignada'),
+    (2, 'En proceso'),
+    (3, 'Terminada')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO task_priorities (id, code, name, description)
+INSERT INTO task_priorities (id, name)
 VALUES
-    (1, 'LOW', 'Baja', 'Prioridad baja'),
-    (2, 'MEDIUM', 'Media', 'Prioridad media'),
-    (3, 'HIGH', 'Alta', 'Prioridad alta')
+    (1, 'Baja'),
+    (2, 'Media'),
+    (3, 'Alta')
 ON CONFLICT (id) DO NOTHING;
 
 SELECT setval(pg_get_serial_sequence('roles', 'id'), COALESCE((SELECT MAX(id) FROM roles), 1), TRUE);

@@ -8,11 +8,8 @@ datasource db {
 }
 
 model Role {
-  id          Int      @id @default(autoincrement())
-  name        String   @unique(map: "uq_roles_name") @db.VarChar(50)
-  description String?  @db.Text
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id   Int    @id @default(autoincrement())
+  name String @unique @db.VarChar(50)
 
   users User[]
 
@@ -20,12 +17,8 @@ model Role {
 }
 
 model EmployeeStatus {
-  id          Int      @id @default(autoincrement())
-  code        String   @unique(map: "uq_employee_statuses_code") @db.VarChar(30)
-  name        String   @db.VarChar(50)
-  description String?  @db.Text
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id   Int    @id @default(autoincrement())
+  name String @db.VarChar(50)
 
   employees Employee[]
 
@@ -33,12 +26,8 @@ model EmployeeStatus {
 }
 
 model ProjectStatus {
-  id          Int      @id @default(autoincrement())
-  code        String   @unique(map: "uq_project_statuses_code") @db.VarChar(30)
-  name        String   @db.VarChar(50)
-  description String?  @db.Text
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id   Int    @id @default(autoincrement())
+  name String @db.VarChar(50)
 
   projects Project[]
 
@@ -46,12 +35,8 @@ model ProjectStatus {
 }
 
 model TaskStatus {
-  id          Int      @id @default(autoincrement())
-  code        String   @unique(map: "uq_task_statuses_code") @db.VarChar(30)
-  name        String   @db.VarChar(50)
-  description String?  @db.Text
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id   Int    @id @default(autoincrement())
+  name String @db.VarChar(50)
 
   tasks           Task[]
   transitionsFrom TaskStatusTransition[] @relation("TaskTransitionsFromStatus")
@@ -61,12 +46,8 @@ model TaskStatus {
 }
 
 model TaskPriority {
-  id          Int      @id @default(autoincrement())
-  code        String   @unique(map: "uq_task_priorities_code") @db.VarChar(30)
-  name        String   @db.VarChar(50)
-  description String?  @db.Text
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id   Int    @id @default(autoincrement())
+  name String @db.VarChar(50)
 
   tasks Task[]
 
