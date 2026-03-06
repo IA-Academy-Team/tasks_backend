@@ -52,8 +52,17 @@ export const updateEmployeeStatusSchema = z.object({
   isActive: z.boolean(),
 });
 
+export const employeeAssignmentsListQuerySchema = z.object({
+  status: z.enum(["all", "active", "inactive"]).optional().default("all"),
+});
+
+export const assignEmployeeAreaSchema = z.object({
+  areaId: z.coerce.number().int().positive(),
+});
+
 export type EmployeesListQuery = z.infer<typeof employeesListQuerySchema>;
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
 export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;
 export type UpdateEmployeeStatusInput = z.infer<typeof updateEmployeeStatusSchema>;
-
+export type EmployeeAssignmentsListQuery = z.infer<typeof employeeAssignmentsListQuerySchema>;
+export type AssignEmployeeAreaInput = z.infer<typeof assignEmployeeAreaSchema>;

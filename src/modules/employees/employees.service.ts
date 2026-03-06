@@ -4,6 +4,7 @@ import { NODE_ENV } from "../../shared/config/env.config.js";
 import { AppError } from "../../shared/http/app-error.js";
 import type { AuthRole } from "../auth/auth.policies.js";
 import type {
+  EmployeeAssignmentsListQuery,
   CreateEmployeeInput,
   EmployeesListQuery,
   UpdateEmployeeInput,
@@ -61,6 +62,37 @@ export interface EmployeeDto {
   deactivatedAt: string | null;
   currentAreaId: number | null;
   currentAreaName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmployeeAreaAssignmentDto {
+  id: number;
+  employeeId: number;
+  areaId: number;
+  areaName: string;
+  assignedByUserId: number;
+  endedByUserId: number | null;
+  assignedAt: string;
+  endedAt: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmployeeProjectMembershipDto {
+  id: number;
+  employeeId: number;
+  projectId: number;
+  projectName: string;
+  projectStatus: string;
+  projectAreaId: number;
+  projectAreaName: string;
+  assignedByUserId: number;
+  endedByUserId: number | null;
+  assignedAt: string;
+  unassignedAt: string | null;
+  isActive: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -163,6 +195,64 @@ const getEmployeeOrThrow = async (employeeId: number): Promise<EmployeeWithRelat
 
   return employee as EmployeeWithRelations;
 };
+
+const mapAreaAssignment = (assignment: {
+  id: number;
+  employeeId: number;
+  areaId: number;
+  assignedByUserId: number;
+  endedByUserId: number | null;
+  assignedAt: Date;
+  endedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  area: { id: number; name: string };
+}): EmployeeAreaAssignmentDto => ({
+  id: assignment.id,
+  employeeId: assignment.employeeId,
+  areaId: assignment.areaId,
+  areaName: assignment.area.name,
+  assignedByUserId: assignment.assignedByUserId,
+  endedByUserId: assignment.endedByUserId,
+  assignedAt: assignment.assignedAt.toISOString(),
+  endedAt: assignment.endedAt?.toISOString() ?? null,
+  isActive: assignment.endedAt === null,
+  createdAt: assignment.createdAt.toISOString(),
+  updatedAt: assignment.updatedAt.toISOString(),
+});
+
+const mapProjectMembership = (membership: {
+  id: number;
+  employeeId: number;
+  projectId: number;
+  assignedByUserId: number;
+  endedByUserId: number | null;
+  assignedAt: Date;
+  unassignedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  project: {
+    id: number;
+    name: string;
+    status: { id: number; name: string };
+    area: { id: number; name: string };
+  };
+}): EmployeeProjectMembershipDto => ({
+  id: membership.id,
+  employeeId: membership.employeeId,
+  projectId: membership.projectId,
+  projectName: membership.project.name,
+  projectStatus: membership.project.status.name,
+  projectAreaId: membership.project.area.id,
+  projectAreaName: membership.project.area.name,
+  assignedByUserId: membership.assignedByUserId,
+  endedByUserId: membership.endedByUserId,
+  assignedAt: membership.assignedAt.toISOString(),
+  unassignedAt: membership.unassignedAt?.toISOString() ?? null,
+  isActive: membership.unassignedAt === null,
+  createdAt: membership.createdAt.toISOString(),
+  updatedAt: membership.updatedAt.toISOString(),
+});
 
 export const listEmployees = async (query: EmployeesListQuery): Promise<EmployeeDto[]> => {
   const where = query.status === "all"
@@ -342,3 +432,159 @@ export const updateEmployeeStatus = async (
   return getEmployeeById(employeeId);
 };
 
+export const listEmployeeAreaAssignments = async (
+  employeeId: number,
+  query: EmployeeAssignmentsListQuery,
+): Promise<EmployeeAreaAssignmentDto[]> => {
+  await getEmployeeOrThrow(employeeId);
+
+  const where: {
+    employeeId: number;
+    endedAt?: Date | null | { not: null };
+  } = { employeeId };
+
+  if (query.status === "active") {
+    where.endedAt = null;
+  }
+
+  if (query.status === "inactive") {
+    where.endedAt = { not: null };
+  }
+
+  const assignments = await prisma.employeeAreaAssignment.findMany({
+    where,
+    orderBy: [{ endedAt: "asc" }, { assignedAt: "desc" }],
+    include: {
+      area: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  return assignments.map((assignment) => mapAreaAssignment(assignment));
+};
+
+export const assignEmployeeToArea = async (
+  employeeId: number,
+  areaId: number,
+  actorUserId: number,
+): Promise<EmployeeAreaAssignmentDto> => {
+  const employee = await getEmployeeOrThrow(employeeId);
+
+  if (!employee.user.isActive) {
+    throw new AppError(409, "EMPLOYEE_INACTIVE", "Employee is inactive");
+  }
+
+  const area = await prisma.area.findUnique({
+    where: { id: areaId },
+    select: { id: true, isActive: true },
+  });
+
+  if (!area) {
+    throw new AppError(404, "AREA_NOT_FOUND", "Area not found");
+  }
+
+  if (!area.isActive) {
+    throw new AppError(409, "AREA_INACTIVE", "Area is inactive");
+  }
+
+  const currentAssignment = await prisma.employeeAreaAssignment.findFirst({
+    where: {
+      employeeId,
+      endedAt: null,
+    },
+    orderBy: { assignedAt: "desc" },
+    select: {
+      id: true,
+      areaId: true,
+    },
+  });
+
+  if (currentAssignment?.areaId === areaId) {
+    throw new AppError(
+      409,
+      "EMPLOYEE_ALREADY_IN_AREA",
+      "Employee already has this area as active assignment",
+    );
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    if (currentAssignment) {
+      await tx.employeeAreaAssignment.update({
+        where: { id: currentAssignment.id },
+        data: {
+          endedAt: new Date(),
+          endedByUserId: actorUserId,
+        },
+      });
+    }
+
+    return tx.employeeAreaAssignment.create({
+      data: {
+        employeeId,
+        areaId,
+        assignedByUserId: actorUserId,
+      },
+      include: {
+        area: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+  });
+
+  return mapAreaAssignment(result);
+};
+
+export const listEmployeeProjectMemberships = async (
+  employeeId: number,
+  query: EmployeeAssignmentsListQuery,
+): Promise<EmployeeProjectMembershipDto[]> => {
+  await getEmployeeOrThrow(employeeId);
+
+  const where: {
+    employeeId: number;
+    unassignedAt?: Date | null | { not: null };
+  } = { employeeId };
+
+  if (query.status === "active") {
+    where.unassignedAt = null;
+  }
+
+  if (query.status === "inactive") {
+    where.unassignedAt = { not: null };
+  }
+
+  const memberships = await prisma.projectMembership.findMany({
+    where,
+    orderBy: [{ unassignedAt: "asc" }, { assignedAt: "desc" }],
+    include: {
+      project: {
+        select: {
+          id: true,
+          name: true,
+          status: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          area: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  return memberships.map((membership) => mapProjectMembership(membership));
+};
