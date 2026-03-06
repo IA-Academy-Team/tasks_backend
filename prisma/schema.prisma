@@ -7,29 +7,6 @@ datasource db {
   provider = "postgresql"
 }
 
-enum EmployeeStatus {
-  ACTIVE
-  INACTIVE
-}
-
-enum ProjectStatus {
-  ACTIVE
-  CLOSED
-  CANCELLED
-}
-
-enum TaskStatus {
-  ASSIGNED
-  IN_PROGRESS
-  DONE
-}
-
-enum TaskPriority {
-  LOW
-  MEDIUM
-  HIGH
-}
-
 model Role {
   id          Int      @id @default(autoincrement())
   name        String   @unique(map: "uq_roles_name") @db.VarChar(50)
@@ -40,6 +17,60 @@ model Role {
   users User[]
 
   @@map("roles")
+}
+
+model EmployeeStatus {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique(map: "uq_employee_statuses_code") @db.VarChar(30)
+  name        String   @db.VarChar(50)
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  employees Employee[]
+
+  @@map("employee_statuses")
+}
+
+model ProjectStatus {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique(map: "uq_project_statuses_code") @db.VarChar(30)
+  name        String   @db.VarChar(50)
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  projects Project[]
+
+  @@map("project_statuses")
+}
+
+model TaskStatus {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique(map: "uq_task_statuses_code") @db.VarChar(30)
+  name        String   @db.VarChar(50)
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tasks           Task[]
+  transitionsFrom TaskStatusTransition[] @relation("TaskTransitionsFromStatus")
+  transitionsTo   TaskStatusTransition[] @relation("TaskTransitionsToStatus")
+
+  @@map("task_statuses")
+}
+
+model TaskPriority {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique(map: "uq_task_priorities_code") @db.VarChar(30)
+  name        String   @db.VarChar(50)
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tasks Task[]
+
+  @@map("task_priorities")
 }
 
 model User {
@@ -126,18 +157,19 @@ model Verification {
 }
 
 model Employee {
-  id            Int            @id @default(autoincrement())
-  userId        Int            @unique(map: "uq_employees_user_id") @map("user_id")
-  status        EmployeeStatus @default(ACTIVE)
-  deactivatedAt DateTime?      @map("deactivated_at") @db.Timestamptz(6)
-  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id               Int       @id @default(autoincrement())
+  userId           Int       @unique(map: "uq_employees_user_id") @map("user_id")
+  employeeStatusId Int       @default(1) @map("employee_status_id")
+  deactivatedAt    DateTime? @map("deactivated_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user               User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  status             EmployeeStatus           @relation(fields: [employeeStatusId], references: [id], onDelete: Restrict)
   areaAssignments    EmployeeAreaAssignment[]
   projectMemberships ProjectMembership[]
 
-  @@index([status], map: "idx_employees_status")
+  @@index([employeeStatusId], map: "idx_employees_employee_status_id")
   @@map("employees")
 }
 
@@ -178,23 +210,24 @@ model EmployeeAreaAssignment {
 }
 
 model Project {
-  id          Int           @id @default(autoincrement())
-  areaId      Int           @map("area_id")
-  name        String        @db.VarChar(160)
-  description String?       @db.Text
-  status      ProjectStatus @default(ACTIVE)
-  startDate   DateTime?     @map("start_date") @db.Date
-  endDate     DateTime?     @map("end_date") @db.Date
-  closedAt    DateTime?     @map("closed_at") @db.Timestamptz(6)
-  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id              Int       @id @default(autoincrement())
+  areaId          Int       @map("area_id")
+  projectStatusId Int       @default(1) @map("project_status_id")
+  name            String    @db.VarChar(160)
+  description     String?   @db.Text
+  startDate       DateTime? @map("start_date") @db.Date
+  endDate         DateTime? @map("end_date") @db.Date
+  closedAt        DateTime? @map("closed_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   area        Area                @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  status      ProjectStatus       @relation(fields: [projectStatusId], references: [id], onDelete: Restrict)
   memberships ProjectMembership[]
   tasks       Task[]
 
   @@unique([areaId, name], map: "uq_projects_area_name")
-  @@index([areaId, status], map: "idx_projects_area_status")
+  @@index([areaId, projectStatusId], map: "idx_projects_area_status_id")
   @@map("projects")
 }
 
@@ -222,47 +255,54 @@ model ProjectMembership {
 }
 
 model Task {
-  id                   Int          @id @default(autoincrement())
-  projectId            Int          @map("project_id")
-  assigneeMembershipId Int?         @map("assignee_membership_id")
-  title                String       @db.VarChar(160)
-  description          String?      @db.Text
-  priority             TaskPriority @default(MEDIUM)
-  status               TaskStatus   @default(ASSIGNED)
-  plannedStartDate     DateTime     @map("planned_start_date") @db.Date
-  dueDate              DateTime     @map("due_date") @db.Date
-  estimatedMinutes     Int?         @map("estimated_minutes")
-  deletedAt            DateTime?    @map("deleted_at") @db.Timestamptz(6)
-  createdByUserId      Int          @map("created_by_user_id")
-  createdAt            DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                   Int       @id @default(autoincrement())
+  projectId            Int       @map("project_id")
+  assigneeMembershipId Int?      @map("assignee_membership_id")
+  taskStatusId         Int       @default(1) @map("task_status_id")
+  taskPriorityId       Int       @default(2) @map("task_priority_id")
+  title                String    @db.VarChar(160)
+  description          String?   @db.Text
+  plannedStartDate     DateTime  @map("planned_start_date") @db.Date
+  dueDate              DateTime  @map("due_date") @db.Date
+  estimatedMinutes     Int?      @map("estimated_minutes")
+  deletedAt            DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdByUserId      Int       @map("created_by_user_id")
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   project            Project                @relation(fields: [projectId], references: [id], onDelete: Restrict)
   assigneeMembership ProjectMembership?     @relation("TaskAssigneeMembership", fields: [assigneeMembershipId], references: [id], onDelete: Restrict)
+  status             TaskStatus             @relation(fields: [taskStatusId], references: [id], onDelete: Restrict)
+  priority           TaskPriority           @relation(fields: [taskPriorityId], references: [id], onDelete: Restrict)
   createdByUser      User                   @relation("TasksCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   statusTransitions  TaskStatusTransition[]
   workSessions       TaskWorkSession[]
 
-  @@index([projectId, status], map: "idx_tasks_project_status")
-  @@index([assigneeMembershipId, status], map: "idx_tasks_assignee_status")
+  @@index([projectId, taskStatusId], map: "idx_tasks_project_status_id")
+  @@index([assigneeMembershipId, taskStatusId], map: "idx_tasks_assignee_status_id")
+  @@index([taskPriorityId], map: "idx_tasks_task_priority_id")
   @@index([dueDate], map: "idx_tasks_due_date")
   @@index([deletedAt], map: "idx_tasks_deleted_at")
   @@map("tasks")
 }
 
 model TaskStatusTransition {
-  id              Int         @id @default(autoincrement())
-  taskId          Int         @map("task_id")
-  fromStatus      TaskStatus? @map("from_status")
-  toStatus        TaskStatus  @map("to_status")
-  changedByUserId Int         @map("changed_by_user_id")
-  changedAt       DateTime    @default(now()) @map("changed_at") @db.Timestamptz(6)
-  notes           String?     @db.Text
+  id              Int      @id @default(autoincrement())
+  taskId          Int      @map("task_id")
+  fromStatusId    Int?     @map("from_status_id")
+  toStatusId      Int      @map("to_status_id")
+  changedByUserId Int      @map("changed_by_user_id")
+  changedAt       DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
+  notes           String?  @db.Text
 
-  task          Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  changedByUser User @relation("TaskStatusTransitionsChangedBy", fields: [changedByUserId], references: [id], onDelete: Restrict)
+  task          Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fromStatus    TaskStatus? @relation("TaskTransitionsFromStatus", fields: [fromStatusId], references: [id], onDelete: Restrict)
+  toStatus      TaskStatus  @relation("TaskTransitionsToStatus", fields: [toStatusId], references: [id], onDelete: Restrict)
+  changedByUser User        @relation("TaskStatusTransitionsChangedBy", fields: [changedByUserId], references: [id], onDelete: Restrict)
 
   @@index([taskId, changedAt], map: "idx_task_status_transitions_task_changed_at")
+  @@index([fromStatusId], map: "idx_task_status_transitions_from_status_id")
+  @@index([toStatusId], map: "idx_task_status_transitions_to_status_id")
   @@map("task_status_transitions")
 }
 
