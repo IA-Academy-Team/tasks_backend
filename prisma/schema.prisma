@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
@@ -11,16 +5,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-}
-
-enum UserRole {
-  ADMIN
-  EMPLOYEE
-}
-
-enum AuthProviderType {
-  PASSWORD
-  OAUTH
 }
 
 enum EmployeeStatus {
@@ -46,17 +30,33 @@ enum TaskPriority {
   HIGH
 }
 
-model User {
+model Role {
   id          Int      @id @default(autoincrement())
-  email       String   @unique(map: "uq_users_email") @db.VarChar(320)
-  fullName    String   @map("full_name") @db.VarChar(150)
-  phoneNumber String?  @map("phone_number") @db.VarChar(30)
-  role        UserRole
+  name        String   @unique(map: "uq_roles_name") @db.VarChar(50)
+  description String?  @db.Text
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  authIdentities             AuthIdentity[]
-  authSessions               AuthSession[]
+  users User[]
+
+  @@map("roles")
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  name          String   @db.VarChar(150)
+  email         String   @unique(map: "uq_users_email") @db.VarChar(320)
+  emailVerified Boolean  @default(false) @map("email_verified")
+  image         String?  @db.Text
+  phoneNumber   String?  @map("phone_number") @db.VarChar(30)
+  roleId        Int      @default(1) @map("role_id")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  role                       Role                     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  accounts                   Account[]
+  sessions                   Session[]
   employee                   Employee?
   areaAssignmentsStarted     EmployeeAreaAssignment[] @relation("AreaAssignmentsStartedBy")
   areaAssignmentsEnded       EmployeeAreaAssignment[] @relation("AreaAssignmentsEndedBy")
@@ -67,44 +67,62 @@ model User {
   workSessionsStarted        TaskWorkSession[]        @relation("TaskWorkSessionsStartedBy")
   workSessionsEnded          TaskWorkSession[]        @relation("TaskWorkSessionsEndedBy")
 
-  @@index([role], map: "idx_users_role")
+  @@index([roleId], map: "idx_users_role_id")
+  @@index([isActive], map: "idx_users_is_active")
   @@map("users")
 }
 
-model AuthIdentity {
-  id              Int              @id @default(autoincrement())
-  userId          Int              @map("user_id")
-  providerType    AuthProviderType @map("provider_type")
-  providerName    String           @map("provider_name") @db.VarChar(50)
-  providerSubject String           @map("provider_subject") @db.VarChar(255)
-  passwordHash    String?          @map("password_hash") @db.VarChar(255)
-  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+model Account {
+  id                    Int       @id @default(autoincrement())
+  userId                Int       @map("user_id")
+  providerId            String    @map("provider_id") @db.VarChar(80)
+  providerAccountId     String    @map("provider_account_id") @db.VarChar(255)
+  accessToken           String?   @map("access_token") @db.Text
+  refreshToken          String?   @map("refresh_token") @db.Text
+  idToken               String?   @map("id_token") @db.Text
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at") @db.Timestamptz(6)
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at") @db.Timestamptz(6)
+  scope                 String?   @db.Text
+  password              String?   @db.VarChar(255)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([providerName, providerSubject], map: "uq_auth_identities_provider_subject")
-  @@unique([userId, providerName], map: "uq_auth_identities_user_provider")
-  @@index([userId], map: "idx_auth_identities_user_id")
-  @@map("auth_identities")
+  @@unique([providerId, providerAccountId], map: "uq_accounts_provider_account")
+  @@index([userId], map: "idx_accounts_user_id")
+  @@map("accounts")
 }
 
-model AuthSession {
-  id        Int       @id @default(autoincrement())
-  userId    Int       @map("user_id")
-  tokenHash String    @unique(map: "uq_auth_sessions_token_hash") @map("token_hash") @db.Char(64)
-  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
-  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
-  ipAddress String?   @map("ip_address") @db.VarChar(45)
-  userAgent String?   @map("user_agent") @db.Text
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+model Session {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  token     String   @unique(map: "uq_sessions_token") @db.VarChar(255)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  ipAddress String?  @map("ip_address") @db.VarChar(45)
+  userAgent String?  @map("user_agent") @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId, expiresAt], map: "idx_auth_sessions_user_expires_at")
-  @@index([expiresAt], map: "idx_auth_sessions_expires_at")
-  @@map("auth_sessions")
+  @@index([userId, expiresAt], map: "idx_sessions_user_expires_at")
+  @@index([expiresAt], map: "idx_sessions_expires_at")
+  @@map("sessions")
+}
+
+model Verification {
+  id         Int      @id @default(autoincrement())
+  identifier String   @db.VarChar(320)
+  value      String   @db.VarChar(255)
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([identifier, value], map: "uq_verifications_identifier_value")
+  @@index([identifier], map: "idx_verifications_identifier")
+  @@index([expiresAt], map: "idx_verifications_expires_at")
+  @@map("verifications")
 }
 
 model Employee {
@@ -153,7 +171,6 @@ model EmployeeAreaAssignment {
   area           Area     @relation(fields: [areaId], references: [id], onDelete: Restrict)
   assignedByUser User     @relation("AreaAssignmentsStartedBy", fields: [assignedByUserId], references: [id], onDelete: Restrict)
   endedByUser    User?    @relation("AreaAssignmentsEndedBy", fields: [endedByUserId], references: [id], onDelete: Restrict)
-  /// SQL migration adds a partial unique index on employee_id where ended_at IS NULL.
 
   @@index([employeeId, endedAt], map: "idx_employee_area_assignments_employee_ended_at")
   @@index([areaId, endedAt], map: "idx_employee_area_assignments_area_ended_at")
@@ -198,7 +215,6 @@ model ProjectMembership {
   endedByUser    User?             @relation("ProjectMembershipsEndedBy", fields: [endedByUserId], references: [id], onDelete: Restrict)
   assignedTasks  Task[]            @relation("TaskAssigneeMembership")
   workSessions   TaskWorkSession[]
-  /// SQL migration adds a partial unique index on [projectId, employeeId] where unassignedAt IS NULL.
 
   @@index([projectId, unassignedAt], map: "idx_project_memberships_project_unassigned_at")
   @@index([employeeId, unassignedAt], map: "idx_project_memberships_employee_unassigned_at")
@@ -265,7 +281,6 @@ model TaskWorkSession {
   projectMembership ProjectMembership @relation(fields: [projectMembershipId], references: [id], onDelete: Restrict)
   startedByUser     User              @relation("TaskWorkSessionsStartedBy", fields: [startedByUserId], references: [id], onDelete: Restrict)
   endedByUser       User?             @relation("TaskWorkSessionsEndedBy", fields: [endedByUserId], references: [id], onDelete: Restrict)
-  /// SQL migration adds a partial unique index on taskId where endedAt IS NULL.
 
   @@index([taskId, startedAt], map: "idx_task_work_sessions_task_started_at")
   @@index([projectMembershipId, startedAt], map: "idx_task_work_sessions_membership_started_at")

@@ -38,10 +38,12 @@ CREATE DATABASE IF NOT EXISTS traskapp_dev;
 -- ==============================
 CREATE TABLE roles (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(12) NOT NULL,
+    name VARCHAR(12) NOT NULL UNIQUE    ,
+    description TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 );
 
-CREATE TYPE auth_provider_type AS ENUM ('PASSWORD', 'OAUTH');
 CREATE TYPE employee_status AS ENUM ('ACTIVE', 'INACTIVE');
 CREATE TYPE project_status AS ENUM ('ACTIVE', 'CLOSED', 'CANCELLED');
 CREATE TYPE task_status AS ENUM ('ASSIGNED', 'IN_PROGRESS', 'DONE');
@@ -49,52 +51,58 @@ CREATE TYPE task_priority AS ENUM ('LOW', 'MEDIUM', 'HIGH');
 
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
-    email VARCHAR(120) NOT NULL UNIQUE,
-    full_name VARCHAR(150) NOT NULL,
-    phone_number VARCHAR(20),
+    name VARCHAR(150) NOT NULL,
+    email VARCHAR(320) NOT NULL UNIQUE,
+    email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    image TEXT,
+    phone_number VARCHAR(30),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    role_id INT NOT NULL,
-    FOREIGN KEY (role_id) REFERENCES roles(id)
+    role_id INT NOT NULL DEFAULT 1,
+    FOREIGN KEY (role_id) REFERENCES roles (id) ON DELETE RESTRICT
 );
 
-CREATE TABLE auth_identities (
+CREATE TABLE accounts (
     id SERIAL PRIMARY KEY,
     user_id INT NOT NULL,
-    provider_type auth_provider_type NOT NULL,
-    provider_name VARCHAR(50) NOT NULL,
-    provider_subject VARCHAR(255) NOT NULL,
-    password_hash VARCHAR(255),
+    provider_id VARCHAR(80) NOT NULL,
+    provider_account_id VARCHAR(255) NOT NULL,
+    access_token TEXT,
+    refresh_token TEXT,
+    id_token TEXT,
+    access_token_expires_at TIMESTAMPTZ,
+    refresh_token_expires_at TIMESTAMPTZ,
+    scope TEXT,
+    password VARCHAR(255),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_auth_identities_user
+    CONSTRAINT fk_accounts_user
         FOREIGN KEY (user_id) REFERENCES users (id)
         ON DELETE CASCADE,
-    CONSTRAINT uq_auth_identities_provider_subject UNIQUE (provider_name, provider_subject),
-    CONSTRAINT uq_auth_identities_user_provider UNIQUE (user_id, provider_name),
-    CONSTRAINT chk_auth_identities_password_requirement CHECK (
-        (provider_type = 'PASSWORD' AND password_hash IS NOT NULL)
-        OR (provider_type = 'OAUTH' AND password_hash IS NULL)
-    )
+    CONSTRAINT uq_accounts_provider_account UNIQUE (provider_id, provider_account_id)
 );
 
-CREATE TABLE auth_sessions (
+CREATE TABLE sessions (
     id SERIAL PRIMARY KEY,
-    user_id INT NOT NULL,
-    token_hash CHAR(64) NOT NULL,
+    token VARCHAR(255) NOT NULL UNIQUE,
     expires_at TIMESTAMPTZ NOT NULL,
-    revoked_at TIMESTAMPTZ,
     ip_address VARCHAR(45),
     user_agent TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_auth_sessions_user
-        FOREIGN KEY (user_id) REFERENCES users (id)
-        ON DELETE CASCADE,
-    CONSTRAINT uq_auth_sessions_token_hash UNIQUE (token_hash),
-    CONSTRAINT chk_auth_sessions_revoked_at CHECK (
-        revoked_at IS NULL OR revoked_at >= created_at
-    )
+    user_id INT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+);
+
+CREATE TABLE verifications (
+    id SERIAL PRIMARY KEY,
+    identifier VARCHAR(320) NOT NULL,
+    value VARCHAR(255) NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_verifications_identifier_value UNIQUE (identifier, value)
 );
 
 CREATE TABLE employees (
@@ -287,17 +295,26 @@ CREATE TABLE task_work_sessions (
     )
 );
 
-CREATE INDEX idx_users_role
-    ON users (role);
+CREATE INDEX idx_users_role_id
+    ON users (role_id);
 
-CREATE INDEX idx_auth_identities_user_id
-    ON auth_identities (user_id);
+CREATE INDEX idx_users_is_active
+    ON users (is_active);
 
-CREATE INDEX idx_auth_sessions_user_expires_at
-    ON auth_sessions (user_id, expires_at);
+CREATE INDEX idx_accounts_user_id
+    ON accounts (user_id);
 
-CREATE INDEX idx_auth_sessions_expires_at
-    ON auth_sessions (expires_at);
+CREATE INDEX idx_sessions_user_expires_at
+    ON sessions (user_id, expires_at);
+
+CREATE INDEX idx_sessions_expires_at
+    ON sessions (expires_at);
+
+CREATE INDEX idx_verifications_identifier
+    ON verifications (identifier);
+
+CREATE INDEX idx_verifications_expires_at
+    ON verifications (expires_at);
 
 CREATE INDEX idx_employees_status
     ON employees (status);
@@ -352,3 +369,7 @@ CREATE INDEX idx_task_work_sessions_membership_started_at
 CREATE UNIQUE INDEX uq_task_work_sessions_open_task
     ON task_work_sessions (task_id)
     WHERE ended_at IS NULL;
+
+INSERT INTO roles (id, name, description) VALUES
+(1, 'admin', 'Administrador del sistema'),
+(2, 'employee', 'Empleado operativo');
