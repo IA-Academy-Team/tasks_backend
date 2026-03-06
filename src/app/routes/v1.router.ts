@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { analyticsRouter } from "../../modules/analytics/analytics.router.js";
 import { areasRouter } from "../../modules/areas/areas.router.js";
 import { authRouter } from "../../modules/auth/auth.router.js";
 import { employeesRouter } from "../../modules/employees/employees.router.js";
@@ -16,3 +17,4 @@ apiV1Router.use("/areas", areasRouter);
 apiV1Router.use("/employees", employeesRouter);
 apiV1Router.use("/projects", projectsRouter);
 apiV1Router.use("/tasks", tasksRouter);
+apiV1Router.use("/analytics", analyticsRouter);
