@@ -16,7 +16,8 @@
     "swagger:guide": "npm run swagger:generate && node --import tsx src/shared/scripts/generate-swagger-endpoint-guide.ts",
     "prisma:migrate:seed": "node --import tsx prisma/seeds.ts",
     "swagger:generate": "node --import tsx src/shared/scripts/generate-swagger.ts",
-    "test:endpoints:live": "node --import tsx src/shared/scripts/test-endpoints-live.ts"
+    "test:endpoints:live": "node --import tsx src/shared/scripts/test-endpoints-live.ts",
+    "test:endpoints:vitest": "vitest run src/shared/tests/live-endpoints.test.ts"
   },
   "keywords": [],
   "author": "",
