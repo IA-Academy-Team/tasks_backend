@@ -10,6 +10,7 @@ export const startServer = async () => {
     server.listen(PORT, () => {
       console.log(`Server running at http://localhost:${PORT}`);
       console.log(`Health check at http://localhost:${PORT}/api/health`);
+      console.log(`Swagger docs at http://localhost:${PORT}/api/docs`);
       resolve();
     });
   });
