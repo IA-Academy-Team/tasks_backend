@@ -1,12 +1,31 @@
 import type { Prisma } from "../../../generated/prisma/client.js";
 import prisma from "../../../prisma/prisma.client.js";
-import type { AdminDashboardQuery } from "./analytics.schemas.js";
+import type {
+  AdminDashboardQuery,
+  OverdueAlertsQuery,
+  TaskComplianceReportQuery,
+} from "./analytics.schemas.js";
 
 const TASK_STATUS_NAMES = {
   assigned: "Asignada",
   inProgress: "En proceso",
   done: "Terminada",
 } as const;
+
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+
+type AnalyticsDateFilterField = "plannedStartDate" | "dueDate";
+
+type AnalyticsBaseFilters = {
+  dateFrom?: Date | undefined;
+  dateTo?: Date | undefined;
+  projectId?: number | undefined;
+  areaId?: number | undefined;
+  employeeId?: number | undefined;
+};
+
+export type TaskComplianceStatus = "on_time" | "estimate_delayed" | "date_overdue";
+export type OverdueAlertReason = "DATE_OVERDUE" | "ESTIMATE_OVERDUE";
 
 interface AnalyticsTaskRecord {
   id: number;
@@ -15,6 +34,7 @@ interface AnalyticsTaskRecord {
   dueDate: Date;
   estimatedMinutes: number | null;
   createdAt: Date;
+  updatedAt: Date;
   status: {
     name: string;
   };
@@ -43,6 +63,9 @@ interface AnalyticsTaskRecord {
     startedAt: Date;
     endedAt: Date | null;
   }>;
+  statusTransitions: Array<{
+    changedAt: Date;
+  }>;
 }
 
 interface TaskComputedMetrics {
@@ -58,6 +81,15 @@ interface DashboardAggregate {
   totalEstimatedMinutes: number;
   totalActualMinutes: number;
   totalDeviationMinutes: number;
+}
+
+interface TaskComplianceMetrics {
+  actualMinutes: number;
+  deviationMinutes: number | null;
+  isEstimateDelayed: boolean | null;
+  isDateOverdue: boolean;
+  completedAt: string | null;
+  complianceStatus: TaskComplianceStatus;
 }
 
 export interface EmployeeDashboardUpcomingTaskDto {
@@ -108,6 +140,87 @@ export interface AdminDashboardDto {
   areaProductivity: AdminDashboardAreaProductivityDto[];
 }
 
+export interface TaskComplianceReportRowDto {
+  taskId: number;
+  title: string;
+  projectId: number;
+  projectName: string;
+  areaId: number;
+  areaName: string;
+  assigneeEmployeeId: number | null;
+  assigneeName: string | null;
+  assigneeEmail: string | null;
+  status: string;
+  priority: string;
+  plannedStartDate: string;
+  dueDate: string;
+  completedAt: string | null;
+  estimatedMinutes: number | null;
+  actualMinutes: number;
+  deviationMinutes: number | null;
+  isEstimateDelayed: boolean | null;
+  isDateOverdue: boolean;
+  complianceStatus: TaskComplianceStatus;
+  complianceLabel: string;
+}
+
+export interface TaskComplianceReportDto {
+  filters: {
+    dateFrom: string | null;
+    dateTo: string | null;
+    projectId: number | null;
+    areaId: number | null;
+    employeeId: number | null;
+    compliance: TaskComplianceReportQuery["compliance"];
+    limit: number;
+  };
+  summary: {
+    totalTasks: number;
+    onTimeTasks: number;
+    estimateDelayedTasks: number;
+    dateOverdueTasks: number;
+  };
+  rows: TaskComplianceReportRowDto[];
+}
+
+export interface OverdueAlertDto {
+  taskId: number;
+  title: string;
+  projectId: number;
+  projectName: string;
+  areaId: number;
+  areaName: string;
+  assigneeName: string | null;
+  assigneeEmail: string | null;
+  status: string;
+  priority: string;
+  dueDate: string;
+  estimatedMinutes: number | null;
+  actualMinutes: number;
+  deviationMinutes: number | null;
+  reason: OverdueAlertReason;
+  reasonLabel: string;
+  daysOverdue: number | null;
+}
+
+export interface OverdueAlertsDto {
+  generatedAt: string;
+  filters: {
+    dateFrom: string | null;
+    dateTo: string | null;
+    projectId: number | null;
+    areaId: number | null;
+    employeeId: number | null;
+    limit: number;
+  };
+  counters: {
+    totalAlerts: number;
+    dateOverdueAlerts: number;
+    estimateOverdueAlerts: number;
+  };
+  alerts: OverdueAlertDto[];
+}
+
 const toIsoDate = (value: Date) => value.toISOString().slice(0, 10);
 
 const toUtcDayNumber = (value: Date): number => {
@@ -119,6 +232,12 @@ const toUtcDayNumber = (value: Date): number => {
 };
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
+
+const getComplianceLabel = (status: TaskComplianceStatus): string => {
+  if (status === "date_overdue") return "Atraso por fecha";
+  if (status === "estimate_delayed") return "Atraso estimado";
+  return "En tiempo";
+};
 
 const computeActualMinutes = (
   workSessions: AnalyticsTaskRecord["workSessions"],
@@ -135,6 +254,87 @@ const computeActualMinutes = (
   }
 
   return { actualMinutes: Math.max(0, Math.round(totalMs / 60000)) };
+};
+
+const getTaskCompletedAtDate = (task: AnalyticsTaskRecord): Date | null =>
+  task.statusTransitions[0]?.changedAt ?? null;
+
+const computeTaskComplianceMetrics = (
+  task: AnalyticsTaskRecord,
+  now: Date,
+): TaskComplianceMetrics => {
+  const completedAtDate = getTaskCompletedAtDate(task);
+  const completedAt = completedAtDate?.toISOString() ?? null;
+  const actualMinutes = computeActualMinutes(task.workSessions, now).actualMinutes;
+  const deviationMinutes = task.estimatedMinutes === null
+    ? null
+    : actualMinutes - task.estimatedMinutes;
+  const isEstimateDelayed = task.estimatedMinutes === null
+    ? null
+    : actualMinutes > task.estimatedMinutes;
+
+  const dueDay = toUtcDayNumber(task.dueDate);
+  const completionReference = task.status.name === TASK_STATUS_NAMES.done
+    ? (completedAtDate ?? task.updatedAt)
+    : now;
+  const referenceDay = toUtcDayNumber(completionReference);
+  const isDateOverdue = referenceDay > dueDay;
+  const complianceStatus: TaskComplianceStatus = isDateOverdue
+    ? "date_overdue"
+    : isEstimateDelayed
+      ? "estimate_delayed"
+      : "on_time";
+
+  return {
+    actualMinutes,
+    deviationMinutes,
+    isEstimateDelayed,
+    isDateOverdue,
+    completedAt,
+    complianceStatus,
+  };
+};
+
+const buildTaskWhereClausesFromFilters = (
+  filters: AnalyticsBaseFilters,
+  dateField: AnalyticsDateFilterField,
+): Prisma.TaskWhereInput[] => {
+  const whereClauses: Prisma.TaskWhereInput[] = [{ deletedAt: null }];
+
+  if (filters.projectId !== undefined) {
+    whereClauses.push({ projectId: filters.projectId });
+  }
+
+  if (filters.areaId !== undefined) {
+    whereClauses.push({
+      project: {
+        areaId: filters.areaId,
+      },
+    });
+  }
+
+  if (filters.employeeId !== undefined) {
+    whereClauses.push({
+      assigneeMembership: {
+        employeeId: filters.employeeId,
+      },
+    });
+  }
+
+  if (filters.dateFrom || filters.dateTo) {
+    const dateRange = {
+      ...(filters.dateFrom ? { gte: filters.dateFrom } : {}),
+      ...(filters.dateTo ? { lte: filters.dateTo } : {}),
+    };
+
+    whereClauses.push(
+      dateField === "plannedStartDate"
+        ? { plannedStartDate: dateRange }
+        : { dueDate: dateRange },
+    );
+  }
+
+  return whereClauses;
 };
 
 const createEmptyAggregate = (): DashboardAggregate => ({
@@ -171,7 +371,7 @@ const buildAggregate = (
   return aggregate;
 };
 
-const baseAnalyticsTaskInclude = {
+const analyticsTaskInclude = {
   status: {
     select: { name: true },
   },
@@ -212,6 +412,20 @@ const baseAnalyticsTaskInclude = {
       endedAt: true,
     },
   },
+  statusTransitions: {
+    where: {
+      toStatus: {
+        name: TASK_STATUS_NAMES.done,
+      },
+    },
+    orderBy: {
+      changedAt: "desc",
+    },
+    take: 1,
+    select: {
+      changedAt: true,
+    },
+  },
 } satisfies Prisma.TaskInclude;
 
 export const getEmployeeDashboard = async (authUserId: number): Promise<EmployeeDashboardDto> => {
@@ -231,13 +445,13 @@ export const getEmployeeDashboard = async (authUserId: number): Promise<Employee
       },
     },
     orderBy: [{ dueDate: "asc" }, { id: "desc" }],
-    include: baseAnalyticsTaskInclude,
+    include: analyticsTaskInclude,
   });
 
   const typedTasks = tasks as unknown as AnalyticsTaskRecord[];
   const now = new Date();
   const todayDay = toUtcDayNumber(now);
-  const upcomingLimitDay = todayDay + (7 * 24 * 60 * 60 * 1000);
+  const upcomingLimitDay = todayDay + (7 * DAY_IN_MS);
 
   const computedTasks = typedTasks.map((task) => ({
     task,
@@ -282,43 +496,14 @@ export const getEmployeeDashboard = async (authUserId: number): Promise<Employee
 };
 
 export const getAdminDashboard = async (query: AdminDashboardQuery): Promise<AdminDashboardDto> => {
-  const whereClauses: Prisma.TaskWhereInput[] = [{ deletedAt: null }];
-
-  if (query.projectId !== undefined) {
-    whereClauses.push({ projectId: query.projectId });
-  }
-
-  if (query.areaId !== undefined) {
-    whereClauses.push({
-      project: {
-        areaId: query.areaId,
-      },
-    });
-  }
-
-  if (query.employeeId !== undefined) {
-    whereClauses.push({
-      assigneeMembership: {
-        employeeId: query.employeeId,
-      },
-    });
-  }
-
-  if (query.dateFrom || query.dateTo) {
-    whereClauses.push({
-      plannedStartDate: {
-        ...(query.dateFrom ? { gte: query.dateFrom } : {}),
-        ...(query.dateTo ? { lte: query.dateTo } : {}),
-      },
-    });
-  }
+  const whereClauses = buildTaskWhereClausesFromFilters(query, "plannedStartDate");
 
   const tasks = await prisma.task.findMany({
     where: {
       AND: whereClauses,
     },
     orderBy: [{ plannedStartDate: "desc" }, { id: "desc" }],
-    include: baseAnalyticsTaskInclude,
+    include: analyticsTaskInclude,
   });
 
   const now = new Date();
@@ -413,5 +598,186 @@ export const getAdminDashboard = async (query: AdminDashboardQuery): Promise<Adm
     teamSummary,
     employeeProductivity,
     areaProductivity,
+  };
+};
+
+export const getTaskComplianceReport = async (
+  query: TaskComplianceReportQuery,
+): Promise<TaskComplianceReportDto> => {
+  const whereClauses = buildTaskWhereClausesFromFilters(query, "dueDate");
+
+  const tasks = await prisma.task.findMany({
+    where: {
+      AND: whereClauses,
+    },
+    orderBy: [{ dueDate: "asc" }, { id: "desc" }],
+    include: analyticsTaskInclude,
+  });
+
+  const now = new Date();
+  const typedTasks = tasks as unknown as AnalyticsTaskRecord[];
+
+  const reportRows = typedTasks.map((task) => {
+    const metrics = computeTaskComplianceMetrics(task, now);
+
+    return {
+      taskId: task.id,
+      title: task.title,
+      projectId: task.project.id,
+      projectName: task.project.name,
+      areaId: task.project.area.id,
+      areaName: task.project.area.name,
+      assigneeEmployeeId: task.assigneeMembership?.employee.id ?? null,
+      assigneeName: task.assigneeMembership?.employee.user.name ?? null,
+      assigneeEmail: task.assigneeMembership?.employee.user.email ?? null,
+      status: task.status.name,
+      priority: task.priority.name,
+      plannedStartDate: toIsoDate(task.plannedStartDate),
+      dueDate: toIsoDate(task.dueDate),
+      completedAt: metrics.completedAt,
+      estimatedMinutes: task.estimatedMinutes ?? null,
+      actualMinutes: metrics.actualMinutes,
+      deviationMinutes: metrics.deviationMinutes,
+      isEstimateDelayed: metrics.isEstimateDelayed,
+      isDateOverdue: metrics.isDateOverdue,
+      complianceStatus: metrics.complianceStatus,
+      complianceLabel: getComplianceLabel(metrics.complianceStatus),
+    } satisfies TaskComplianceReportRowDto;
+  });
+
+  const complianceFilteredRows = query.compliance === "all"
+    ? reportRows
+    : reportRows.filter((row) => row.complianceStatus === query.compliance);
+
+  const complianceSortWeight: Record<TaskComplianceStatus, number> = {
+    date_overdue: 0,
+    estimate_delayed: 1,
+    on_time: 2,
+  };
+
+  const sortedRows = [...complianceFilteredRows].sort((a, b) => (
+    complianceSortWeight[a.complianceStatus] - complianceSortWeight[b.complianceStatus]
+    || Date.parse(a.dueDate) - Date.parse(b.dueDate)
+    || b.taskId - a.taskId
+  ));
+
+  const rows = sortedRows.slice(0, query.limit);
+  const onTimeTasks = complianceFilteredRows.filter((row) => row.complianceStatus === "on_time").length;
+  const estimateDelayedTasks = complianceFilteredRows
+    .filter((row) => row.complianceStatus === "estimate_delayed").length;
+  const dateOverdueTasks = complianceFilteredRows
+    .filter((row) => row.complianceStatus === "date_overdue").length;
+
+  return {
+    filters: {
+      dateFrom: query.dateFrom ? toIsoDate(query.dateFrom) : null,
+      dateTo: query.dateTo ? toIsoDate(query.dateTo) : null,
+      projectId: query.projectId ?? null,
+      areaId: query.areaId ?? null,
+      employeeId: query.employeeId ?? null,
+      compliance: query.compliance,
+      limit: query.limit,
+    },
+    summary: {
+      totalTasks: complianceFilteredRows.length,
+      onTimeTasks,
+      estimateDelayedTasks,
+      dateOverdueTasks,
+    },
+    rows,
+  };
+};
+
+export const getOverdueAlerts = async (query: OverdueAlertsQuery): Promise<OverdueAlertsDto> => {
+  const whereClauses = buildTaskWhereClausesFromFilters(query, "dueDate");
+  whereClauses.push({
+    status: {
+      name: {
+        not: TASK_STATUS_NAMES.done,
+      },
+    },
+  });
+
+  const tasks = await prisma.task.findMany({
+    where: {
+      AND: whereClauses,
+    },
+    orderBy: [{ dueDate: "asc" }, { id: "desc" }],
+    include: analyticsTaskInclude,
+  });
+
+  const now = new Date();
+  const todayDay = toUtcDayNumber(now);
+  const typedTasks = tasks as unknown as AnalyticsTaskRecord[];
+
+  const alerts = typedTasks.flatMap((task) => {
+    const metrics = computeTaskComplianceMetrics(task, now);
+    const isEstimateOverdue = task.estimatedMinutes !== null && metrics.actualMinutes > task.estimatedMinutes;
+    let reason: OverdueAlertReason | null = null;
+
+    if (metrics.isDateOverdue) {
+      reason = "DATE_OVERDUE";
+    } else if (isEstimateOverdue) {
+      reason = "ESTIMATE_OVERDUE";
+    }
+
+    if (!reason) {
+      return [];
+    }
+
+    const dueDay = toUtcDayNumber(task.dueDate);
+    const daysOverdue = reason === "DATE_OVERDUE"
+      ? Math.max(1, Math.floor((todayDay - dueDay) / DAY_IN_MS))
+      : null;
+
+    return [{
+      taskId: task.id,
+      title: task.title,
+      projectId: task.project.id,
+      projectName: task.project.name,
+      areaId: task.project.area.id,
+      areaName: task.project.area.name,
+      assigneeName: task.assigneeMembership?.employee.user.name ?? null,
+      assigneeEmail: task.assigneeMembership?.employee.user.email ?? null,
+      status: task.status.name,
+      priority: task.priority.name,
+      dueDate: toIsoDate(task.dueDate),
+      estimatedMinutes: task.estimatedMinutes ?? null,
+      actualMinutes: metrics.actualMinutes,
+      deviationMinutes: metrics.deviationMinutes,
+      reason,
+      reasonLabel: reason === "DATE_OVERDUE" ? "Atraso por fecha" : "Atraso por estimacion",
+      daysOverdue,
+    } satisfies OverdueAlertDto];
+  });
+
+  const sortedAlerts = alerts.sort((a, b) => (
+    Number(b.reason === "DATE_OVERDUE") - Number(a.reason === "DATE_OVERDUE")
+    || (b.daysOverdue ?? 0) - (a.daysOverdue ?? 0)
+    || (b.deviationMinutes ?? 0) - (a.deviationMinutes ?? 0)
+    || Date.parse(a.dueDate) - Date.parse(b.dueDate)
+    || b.taskId - a.taskId
+  ));
+
+  const limitedAlerts = sortedAlerts.slice(0, query.limit);
+  const dateOverdueAlerts = limitedAlerts.filter((alert) => alert.reason === "DATE_OVERDUE").length;
+  const estimateOverdueAlerts = limitedAlerts.filter((alert) => alert.reason === "ESTIMATE_OVERDUE").length;
+
+  return {
+    generatedAt: now.toISOString(),
+    filters: {
+      dateFrom: query.dateFrom ? toIsoDate(query.dateFrom) : null,
+      dateTo: query.dateTo ? toIsoDate(query.dateTo) : null,
+      projectId: query.projectId ?? null,
+      areaId: query.areaId ?? null,
+      employeeId: query.employeeId ?? null,
+      limit: query.limit,
+    },
+    counters: {
+      totalAlerts: limitedAlerts.length,
+      dateOverdueAlerts,
+      estimateOverdueAlerts,
+    },
+    alerts: limitedAlerts,
   };
 };
