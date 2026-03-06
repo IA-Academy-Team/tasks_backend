@@ -2,13 +2,15 @@ export type AuthRole = "admin" | "employee";
 
 export type AuthResource =
   | "dashboard"
+  | "areas"
+  | "employees"
   | "projects"
   | "projectBoard"
   | "profile"
   | "members";
 
 const ROLE_POLICIES: Record<AuthRole, AuthResource[]> = {
-  admin: ["dashboard", "projects", "projectBoard", "profile", "members"],
+  admin: ["dashboard", "areas", "employees", "projects", "projectBoard", "profile", "members"],
   employee: ["dashboard", "projects", "projectBoard", "profile"],
 };
 
