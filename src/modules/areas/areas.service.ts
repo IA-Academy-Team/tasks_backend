@@ -22,38 +22,80 @@ export interface DeleteAreaResult {
   mode: "deleted" | "archived";
 }
 
-const mapArea = async (area: {
+interface AreaMetrics {
+  activeMemberCount: number;
+  activeProjectCount: number;
+}
+
+const buildAreaMetricsMap = async (areaIds: number[]): Promise<Map<number, AreaMetrics>> => {
+  if (areaIds.length === 0) {
+    return new Map();
+  }
+
+  const [activeMemberCounts, activeProjectCounts] = await Promise.all([
+    prisma.employeeAreaAssignment.groupBy({
+      by: ["areaId"],
+      where: {
+        areaId: { in: areaIds },
+        endedAt: null,
+      },
+      _count: {
+        _all: true,
+      },
+    }),
+    prisma.project.groupBy({
+      by: ["areaId"],
+      where: {
+        areaId: { in: areaIds },
+        status: {
+          name: "Activo",
+        },
+      },
+      _count: {
+        _all: true,
+      },
+    }),
+  ]);
+
+  const metrics = new Map<number, AreaMetrics>();
+
+  for (const areaId of areaIds) {
+    metrics.set(areaId, {
+      activeMemberCount: 0,
+      activeProjectCount: 0,
+    });
+  }
+
+  for (const count of activeMemberCounts) {
+    const current = metrics.get(count.areaId);
+    if (!current) continue;
+    current.activeMemberCount = count._count._all;
+  }
+
+  for (const count of activeProjectCounts) {
+    const current = metrics.get(count.areaId);
+    if (!current) continue;
+    current.activeProjectCount = count._count._all;
+  }
+
+  return metrics;
+};
+
+const mapArea = (area: {
   id: number;
   name: string;
   description: string | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
-}): Promise<AreaDto> => {
-  const [activeMemberCount, activeProjectCount] = await Promise.all([
-    prisma.employeeAreaAssignment.count({
-      where: {
-        areaId: area.id,
-        endedAt: null,
-      },
-    }),
-    prisma.project.count({
-      where: {
-        areaId: area.id,
-        status: {
-          name: "Activo",
-        },
-      },
-    }),
-  ]);
-
+}, metrics: AreaMetrics): AreaDto => {
   return {
     id: area.id,
     name: area.name,
     description: area.description ?? null,
     isActive: area.isActive,
-    activeMemberCount,
-    activeProjectCount,
+    activeMemberCount: metrics.activeMemberCount,
+    activeProjectCount: metrics.activeProjectCount,
     createdAt: area.createdAt.toISOString(),
     updatedAt: area.updatedAt.toISOString(),
   };
@@ -81,12 +123,20 @@ export const listAreas = async (query: AreasListQuery): Promise<AreaDto[]> => {
     orderBy: [{ isActive: "desc" }, { name: "asc" }],
   });
 
-  return Promise.all(areas.map((area) => mapArea(area)));
+  const metrics = await buildAreaMetricsMap(areas.map((area) => area.id));
+  return areas.map((area) => mapArea(area, metrics.get(area.id) ?? {
+    activeMemberCount: 0,
+    activeProjectCount: 0,
+  }));
 };
 
 export const getAreaById = async (areaId: number): Promise<AreaDto> => {
   const area = await getAreaOrThrow(areaId);
-  return mapArea(area);
+  const metrics = await buildAreaMetricsMap([area.id]);
+  return mapArea(area, metrics.get(area.id) ?? {
+    activeMemberCount: 0,
+    activeProjectCount: 0,
+  });
 };
 
 export const createArea = async (payload: CreateAreaInput): Promise<AreaDto> => {
@@ -104,7 +154,11 @@ export const createArea = async (payload: CreateAreaInput): Promise<AreaDto> => 
     throw error;
   });
 
-  return mapArea(area);
+  const metrics = await buildAreaMetricsMap([area.id]);
+  return mapArea(area, metrics.get(area.id) ?? {
+    activeMemberCount: 0,
+    activeProjectCount: 0,
+  });
 };
 
 export const updateArea = async (
@@ -146,7 +200,11 @@ export const updateArea = async (
     throw error;
   });
 
-  return mapArea(area);
+  const metrics = await buildAreaMetricsMap([area.id]);
+  return mapArea(area, metrics.get(area.id) ?? {
+    activeMemberCount: 0,
+    activeProjectCount: 0,
+  });
 };
 
 export const deleteArea = async (areaId: number): Promise<DeleteAreaResult> => {
@@ -201,4 +259,3 @@ export const deleteArea = async (areaId: number): Promise<DeleteAreaResult> => {
 
   return { id: areaId, mode: "archived" };
 };
-
