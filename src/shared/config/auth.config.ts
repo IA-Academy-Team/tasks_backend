@@ -5,6 +5,12 @@ import bcrypt from "bcrypt";
 import { prismaAdapter } from "@better-auth/prisma-adapter";
 import { sendEmail } from "../utils/mailer.utils.js";
 import prisma from "../../../prisma/prisma.client.js";
+import {
+  BACKEND_URL,
+  BETTER_AUTH_BASE_PATH,
+  FRONTEND_ORIGIN,
+  NODE_ENV,
+} from "./env.config.js";
 
 const ALLOWED_EMAIL_DOMAINS = new Set([
   "campuslands.com",
@@ -27,7 +33,7 @@ export const auth = betterAuth({
   }),
 
   logger: {
-    level: "debug",
+    level: NODE_ENV === "production" ? "error" : "debug",
   },
 
   advanced: {
@@ -36,11 +42,11 @@ export const auth = betterAuth({
     },
   },
 
-  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3004",
-  basePath: "/auth/handler",
+  baseURL: BACKEND_URL,
+  basePath: BETTER_AUTH_BASE_PATH,
 
   trustedOrigins: [
-    process.env.FRONTEND_URL || "http://localhost:5173",
+    FRONTEND_ORIGIN,
     "http://127.0.0.1:5173",
   ],
 

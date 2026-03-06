@@ -37,6 +37,15 @@ export const PORT = Number(normalize(process.env.PORT, '3000'));
 export const PROD_HOST = normalize(process.env.PROD_HOST, 'https://sdfsfasdfjls.com.co');
 export const DEV_HOST = normalize(process.env.DEV_HOST, 'http://localhost:13131313');
 export const NODE_ENV = normalize(process.env.NODE_ENV, 'development');
+export const API_PREFIX = normalize(process.env.API_PREFIX, '/api');
+export const BACKEND_URL = normalize(
+  process.env.BACKEND_URL || process.env.BETTER_AUTH_URL,
+  `http://localhost:${PORT}`
+);
+export const BETTER_AUTH_BASE_PATH = normalize(
+  process.env.BETTER_AUTH_BASE_PATH,
+  `${API_PREFIX}/auth/handler`
+);
 
 const detectLocalhost = (value: string) =>
   value.includes("localhost") || value.includes("127.0.0.1");
