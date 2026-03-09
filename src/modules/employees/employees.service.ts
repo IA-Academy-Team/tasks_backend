@@ -3,6 +3,7 @@ import prisma from "../../../prisma/prisma.client.js";
 import { NODE_ENV } from "../../shared/config/env.config.js";
 import { AppError } from "../../shared/http/app-error.js";
 import type { AuthRole } from "../auth/auth.policies.js";
+import { createNotificationRecord } from "../notifications/notifications.service.js";
 import type {
   EmployeeAssignmentsListQuery,
   CreateEmployeeInput,
@@ -480,7 +481,7 @@ export const assignEmployeeToArea = async (
 
   const area = await prisma.area.findUnique({
     where: { id: areaId },
-    select: { id: true, isActive: true },
+    select: { id: true, name: true, isActive: true },
   });
 
   if (!area) {
@@ -522,7 +523,7 @@ export const assignEmployeeToArea = async (
       });
     }
 
-    return tx.employeeAreaAssignment.create({
+    const createdAssignment = await tx.employeeAreaAssignment.create({
       data: {
         employeeId,
         areaId,
@@ -537,6 +538,23 @@ export const assignEmployeeToArea = async (
         },
       },
     });
+
+    await createNotificationRecord({
+      userId: employee.user.id,
+      typeCode: "area_assignment",
+      title: "Nueva asignacion de area",
+      message: `Te asignaron al area ${createdAssignment.area.name}.`,
+      resourceType: "area",
+      resourceId: createdAssignment.area.id,
+      metadata: {
+        areaId: createdAssignment.area.id,
+        areaName: createdAssignment.area.name,
+        employeeId,
+        assignedByUserId: actorUserId,
+      },
+    }, tx);
+
+    return createdAssignment;
   });
 
   return mapAreaAssignment(result);

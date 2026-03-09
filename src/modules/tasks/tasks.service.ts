@@ -2,6 +2,7 @@ import type { Prisma } from "../../../generated/prisma/client.js";
 import prisma from "../../../prisma/prisma.client.js";
 import { AppError } from "../../shared/http/app-error.js";
 import type { AuthRole } from "../auth/auth.policies.js";
+import { createNotificationRecord } from "../notifications/notifications.service.js";
 import type {
   CreateTaskInput,
   TasksListQuery,
@@ -368,6 +369,7 @@ const ensureProjectAvailableForTask = async (projectId: number) => {
     where: { id: projectId },
     select: {
       id: true,
+      name: true,
       status: {
         select: {
           id: true,
@@ -384,6 +386,8 @@ const ensureProjectAvailableForTask = async (projectId: number) => {
   if (project.status.name !== "Activo") {
     throw new AppError(409, "PROJECT_NOT_ACTIVE", "Project must be active to manage tasks");
   }
+
+  return project;
 };
 
 const ensureTaskPriorityExists = async (taskPriorityId: number) => {
@@ -556,7 +560,7 @@ export const createTask = async (
   payload: CreateTaskInput,
   actorUserId: number,
 ): Promise<TaskDto> => {
-  await ensureProjectAvailableForTask(payload.projectId);
+  const project = await ensureProjectAvailableForTask(payload.projectId);
   await ensureTaskPriorityExists(payload.taskPriorityId);
   validateTaskDates(payload.plannedStartDate, payload.dueDate);
   const assignedStatusId = await getAssignedStatusId();
@@ -591,6 +595,41 @@ export const createTask = async (
       },
     });
 
+    if (assigneeMembershipId !== null) {
+      const membership = await tx.projectMembership.findUnique({
+        where: { id: assigneeMembershipId },
+        select: {
+          id: true,
+          employeeId: true,
+          employee: {
+            select: {
+              userId: true,
+            },
+          },
+        },
+      });
+
+      if (membership) {
+        await createNotificationRecord({
+          userId: membership.employee.userId,
+          typeCode: "task_assignment",
+          title: "Nueva tarea asignada",
+          message: `Te asignaron la tarea \"${payload.title}\" en ${project.name}.`,
+          resourceType: "task",
+          resourceId: task.id,
+          metadata: {
+            taskId: task.id,
+            taskTitle: payload.title,
+            projectId: project.id,
+            projectName: project.name,
+            projectMembershipId: membership.id,
+            employeeId: membership.employeeId,
+            assignedByUserId: actorUserId,
+          },
+        }, tx);
+      }
+    }
+
     return task;
   });
 
@@ -602,7 +641,7 @@ export const updateTask = async (
   payload: UpdateTaskInput,
 ): Promise<TaskDto> => {
   const existingTask = await getTaskOrThrow(taskId);
-  await ensureProjectAvailableForTask(existingTask.projectId);
+  const project = await ensureProjectAvailableForTask(existingTask.projectId);
 
   if (existingTask.deletedAt) {
     throw new AppError(409, "TASK_SOFT_DELETED", "Task is deleted and cannot be modified");
@@ -662,6 +701,44 @@ export const updateTask = async (
     where: { id: taskId },
     data,
   });
+
+  if (
+    assigneeMembershipId !== undefined
+    && assigneeMembershipId !== null
+    && assigneeMembershipId !== existingTask.assigneeMembershipId
+  ) {
+    const membership = await prisma.projectMembership.findUnique({
+      where: { id: assigneeMembershipId },
+      select: {
+        id: true,
+        employeeId: true,
+        employee: {
+          select: {
+            userId: true,
+          },
+        },
+      },
+    });
+
+    if (membership) {
+      await createNotificationRecord({
+        userId: membership.employee.userId,
+        typeCode: "task_assignment",
+        title: "Nueva tarea asignada",
+        message: `Te asignaron la tarea \"${payload.title ?? existingTask.title}\" en ${project.name}.`,
+        resourceType: "task",
+        resourceId: taskId,
+        metadata: {
+          taskId,
+          taskTitle: payload.title ?? existingTask.title,
+          projectId: project.id,
+          projectName: project.name,
+          projectMembershipId: membership.id,
+          employeeId: membership.employeeId,
+        },
+      });
+    }
+  }
 
   return getTaskById(taskId);
 };

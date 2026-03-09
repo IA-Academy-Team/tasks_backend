@@ -1,6 +1,7 @@
-import type { Prisma } from "../../../generated/prisma/client.js";
+import type { Prisma, PrismaClient } from "../../../generated/prisma/client.js";
 import prisma from "../../../prisma/prisma.client.js";
 import { AppError } from "../../shared/http/app-error.js";
+import { createNotificationRecord } from "../notifications/notifications.service.js";
 import type {
   AssignProjectMembershipInput,
   CreateProjectInput,
@@ -284,8 +285,9 @@ const validateDateRange = (startDate: Date | null, endDate: Date | null) => {
 const getProjectMembershipOrThrow = async (
   projectId: number,
   membershipId: number,
+  db: PrismaClient | Prisma.TransactionClient = prisma,
 ): Promise<ProjectMembershipRecord> => {
-  const membership = await prisma.projectMembership.findFirst({
+  const membership = await db.projectMembership.findFirst({
     where: {
       id: membershipId,
       projectId,
@@ -640,13 +642,35 @@ export const assignProjectMembership = async (
     );
   }
 
-  const createdMembership = await prisma.projectMembership.create({
-    data: {
-      projectId,
-      employeeId: payload.employeeId,
-      assignedByUserId: actorUserId,
-    },
-    select: { id: true },
+  const membership = await prisma.$transaction(async (tx) => {
+    const createdMembership = await tx.projectMembership.create({
+      data: {
+        projectId,
+        employeeId: payload.employeeId,
+        assignedByUserId: actorUserId,
+      },
+      select: { id: true },
+    });
+
+    const hydratedMembership = await getProjectMembershipOrThrow(projectId, createdMembership.id, tx);
+
+    await createNotificationRecord({
+      userId: hydratedMembership.employee.user.id,
+      typeCode: "project_assignment",
+      title: "Nueva asignacion de proyecto",
+      message: `Te asignaron al proyecto ${project.name}.`,
+      resourceType: "project",
+      resourceId: project.id,
+      metadata: {
+        projectId: project.id,
+        projectName: project.name,
+        projectMembershipId: hydratedMembership.id,
+        employeeId: hydratedMembership.employeeId,
+        assignedByUserId: actorUserId,
+      },
+    }, tx);
+
+    return hydratedMembership;
   }).catch((error) => {
     if (isPrismaErrorWithCode(error) && error.code === "P2002") {
       throw new AppError(
@@ -659,7 +683,6 @@ export const assignProjectMembership = async (
     throw error;
   });
 
-  const membership = await getProjectMembershipOrThrow(projectId, createdMembership.id);
   return mapProjectMembership(membership);
 };
 
@@ -797,6 +820,23 @@ export const reassignProjectMembership = async (
         },
       },
     });
+
+    await createNotificationRecord({
+      userId: toMembership.employee.user.id,
+      typeCode: "project_assignment",
+      title: "Nueva asignacion de proyecto",
+      message: `Te asignaron al proyecto ${project.name}.`,
+      resourceType: "project",
+      resourceId: project.id,
+      metadata: {
+        projectId: project.id,
+        projectName: project.name,
+        projectMembershipId: toMembership.id,
+        employeeId: toMembership.employeeId,
+        reassignedFromMembershipId: fromMembership.id,
+        assignedByUserId: actorUserId,
+      },
+    }, tx);
 
     return { fromMembership, toMembership };
   }).catch((error) => {
