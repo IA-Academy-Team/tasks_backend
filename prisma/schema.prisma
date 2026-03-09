@@ -54,6 +54,16 @@ model TaskPriority {
   @@map("task_priorities")
 }
 
+model NotificationType {
+  id   Int    @id @default(autoincrement())
+  code String @unique(map: "uq_notification_types_code") @db.VarChar(50)
+  name String @db.VarChar(100)
+
+  notifications Notification[]
+
+  @@map("notification_types")
+}
+
 model User {
   id            Int      @id @default(autoincrement())
   name          String   @db.VarChar(150)
@@ -78,10 +88,35 @@ model User {
   taskTransitionsChanged     TaskStatusTransition[]   @relation("TaskStatusTransitionsChangedBy")
   workSessionsStarted        TaskWorkSession[]        @relation("TaskWorkSessionsStartedBy")
   workSessionsEnded          TaskWorkSession[]        @relation("TaskWorkSessionsEndedBy")
+  notifications              Notification[]
 
   @@index([roleId], map: "idx_users_role_id")
   @@index([isActive], map: "idx_users_is_active")
   @@map("users")
+}
+
+model Notification {
+  id                 Int       @id @default(autoincrement())
+  userId             Int       @map("user_id")
+  notificationTypeId Int       @map("notification_type_id")
+  title              String    @db.VarChar(180)
+  message            String    @db.Text
+  resourceType       String?   @map("resource_type") @db.VarChar(50)
+  resourceId         Int?      @map("resource_id")
+  metadata           Json?     @db.JsonB
+  isRead             Boolean   @default(false) @map("is_read")
+  readAt             DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notificationType NotificationType @relation(fields: [notificationTypeId], references: [id], onDelete: Restrict)
+
+  @@index([userId, isRead, createdAt], map: "idx_notifications_user_read_created")
+  @@index([userId, readAt], map: "idx_notifications_user_read_at")
+  @@index([notificationTypeId], map: "idx_notifications_type_id")
+  @@index([resourceType, resourceId], map: "idx_notifications_resource")
+  @@map("notifications")
 }
 
 model Account {

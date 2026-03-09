@@ -61,6 +61,13 @@ CREATE TABLE task_priorities (
     name VARCHAR(50) NOT NULL
 );
 
+CREATE TABLE notification_types (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(50) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    CONSTRAINT uq_notification_types_code UNIQUE (code)
+);
+
 -- ==============================
 -- Tablas con dependencias
 -- ==============================
@@ -79,6 +86,31 @@ CREATE TABLE users (
     CONSTRAINT fk_users_role
         FOREIGN KEY (role_id) REFERENCES roles (id)
         ON DELETE RESTRICT
+);
+
+CREATE TABLE notifications (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL,
+    notification_type_id INT NOT NULL,
+    title VARCHAR(180) NOT NULL,
+    message TEXT NOT NULL,
+    resource_type VARCHAR(50),
+    resource_id INT,
+    metadata JSONB,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    read_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_notifications_user
+        FOREIGN KEY (user_id) REFERENCES users (id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_notifications_type
+        FOREIGN KEY (notification_type_id) REFERENCES notification_types (id)
+        ON DELETE RESTRICT,
+    CONSTRAINT chk_notifications_read_pair CHECK (
+        (is_read = FALSE AND read_at IS NULL)
+        OR (is_read = TRUE AND read_at IS NOT NULL)
+    )
 );
 
 CREATE TABLE accounts (
@@ -325,6 +357,18 @@ CREATE INDEX idx_users_role_id
 CREATE INDEX idx_users_is_active
     ON users (is_active);
 
+CREATE INDEX idx_notifications_user_read_created
+    ON notifications (user_id, is_read, created_at DESC);
+
+CREATE INDEX idx_notifications_user_read_at
+    ON notifications (user_id, read_at);
+
+CREATE INDEX idx_notifications_type_id
+    ON notifications (notification_type_id);
+
+CREATE INDEX idx_notifications_resource
+    ON notifications (resource_type, resource_id);
+
 CREATE INDEX idx_accounts_user_id
     ON accounts (user_id);
 
@@ -436,8 +480,16 @@ VALUES
     (3, 'Alta')
 ON CONFLICT (id) DO NOTHING;
 
+INSERT INTO notification_types (id, code, name)
+VALUES
+    (1, 'area_assignment', 'Asignacion de area'),
+    (2, 'project_assignment', 'Asignacion de proyecto'),
+    (3, 'task_assignment', 'Asignacion de tarea')
+ON CONFLICT (id) DO NOTHING;
+
 SELECT setval(pg_get_serial_sequence('roles', 'id'), COALESCE((SELECT MAX(id) FROM roles), 1), TRUE);
 SELECT setval(pg_get_serial_sequence('employee_statuses', 'id'), COALESCE((SELECT MAX(id) FROM employee_statuses), 1), TRUE);
 SELECT setval(pg_get_serial_sequence('project_statuses', 'id'), COALESCE((SELECT MAX(id) FROM project_statuses), 1), TRUE);
 SELECT setval(pg_get_serial_sequence('task_statuses', 'id'), COALESCE((SELECT MAX(id) FROM task_statuses), 1), TRUE);
 SELECT setval(pg_get_serial_sequence('task_priorities', 'id'), COALESCE((SELECT MAX(id) FROM task_priorities), 1), TRUE);
+SELECT setval(pg_get_serial_sequence('notification_types', 'id'), COALESCE((SELECT MAX(id) FROM notification_types), 1), TRUE);

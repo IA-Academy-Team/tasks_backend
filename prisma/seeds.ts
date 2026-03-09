@@ -1,4 +1,5 @@
 import bcrypt from "bcrypt";
+import { Prisma } from "../generated/prisma/client.js";
 import prisma from "./prisma.client.js";
 
 const roles = [
@@ -27,6 +28,12 @@ const taskPriorities = [
   { id: 1, name: "Baja" },
   { id: 2, name: "Media" },
   { id: 3, name: "Alta" },
+];
+
+const notificationTypes = [
+  { id: 1, code: "area_assignment", name: "Asignacion de area" },
+  { id: 2, code: "project_assignment", name: "Asignacion de proyecto" },
+  { id: 3, code: "task_assignment", name: "Asignacion de tarea" },
 ];
 
 const usersSeed = [
@@ -156,6 +163,11 @@ async function getTaskStatusIdByName(name: string) {
 async function getTaskPriorityIdByName(name: string) {
   const priority = await prisma.taskPriority.findFirstOrThrow({ where: { name } });
   return priority.id;
+}
+
+async function getNotificationTypeIdByCode(code: string) {
+  const type = await prisma.notificationType.findFirstOrThrow({ where: { code } });
+  return type.id;
 }
 
 async function ensureUser(user: UserSeed) {
@@ -454,6 +466,65 @@ async function ensureTaskWorkSession(params: {
   return prisma.taskWorkSession.create({ data: params });
 }
 
+async function ensureNotification(params: {
+  userId: number;
+  notificationTypeId: number;
+  title: string;
+  message: string;
+  resourceType?: string | null;
+  resourceId?: number | null;
+  isRead?: boolean;
+  readAt?: Date | null;
+  metadata?: Prisma.InputJsonValue | null;
+  createdAt?: Date;
+}) {
+  const existing = await prisma.notification.findFirst({
+    where: {
+      userId: params.userId,
+      notificationTypeId: params.notificationTypeId,
+      title: params.title,
+      resourceType: params.resourceType ?? null,
+      resourceId: params.resourceId ?? null,
+    },
+  });
+
+  const isRead = params.isRead ?? false;
+  const readAt = isRead
+    ? (params.readAt ?? params.createdAt ?? new Date())
+    : null;
+
+  if (existing) {
+    return prisma.notification.update({
+      where: { id: existing.id },
+      data: {
+        message: params.message,
+        ...(params.metadata !== undefined
+          ? { metadata: params.metadata === null ? Prisma.JsonNull : params.metadata }
+          : {}),
+        isRead,
+        readAt,
+      },
+    });
+  }
+
+  return prisma.notification.create({
+    data: {
+      userId: params.userId,
+      notificationTypeId: params.notificationTypeId,
+      title: params.title,
+      message: params.message,
+      resourceType: params.resourceType ?? null,
+      resourceId: params.resourceId ?? null,
+      ...(params.metadata !== undefined
+        ? { metadata: params.metadata === null ? Prisma.JsonNull : params.metadata }
+        : {}),
+      isRead,
+      readAt,
+      ...(params.createdAt ? { createdAt: params.createdAt } : {}),
+    },
+  });
+}
+
 async function main() {
   await upsertCatalog(roles, (role) =>
     prisma.role.upsert({
@@ -492,6 +563,17 @@ async function main() {
       where: { id: priority.id },
       update: { name: priority.name },
       create: priority,
+    }),
+  );
+
+  await upsertCatalog(notificationTypes, (type) =>
+    prisma.notificationType.upsert({
+      where: { id: type.id },
+      update: {
+        code: type.code,
+        name: type.name,
+      },
+      create: type,
     }),
   );
 
@@ -603,6 +685,9 @@ async function main() {
   const lowPriorityId = await getTaskPriorityIdByName("Baja");
   const mediumPriorityId = await getTaskPriorityIdByName("Media");
   const highPriorityId = await getTaskPriorityIdByName("Alta");
+  const areaAssignmentTypeId = await getNotificationTypeIdByCode("area_assignment");
+  const projectAssignmentTypeId = await getNotificationTypeIdByCode("project_assignment");
+  const taskAssignmentTypeId = await getNotificationTypeIdByCode("task_assignment");
 
   const projectOperaciones = await ensureProject({
     areaId: operacionesArea.id,
@@ -885,6 +970,156 @@ async function main() {
     endedByUserId: sofiaUser.id,
     startedAt: reportSessionStart,
     endedAt: reportSessionEnd,
+  });
+
+  await ensureNotification({
+    userId: lauraUser.id,
+    notificationTypeId: areaAssignmentTypeId,
+    title: "Nueva asignacion de area",
+    message: `Fuiste asignada al area ${operacionesArea.name}.`,
+    resourceType: "area",
+    resourceId: operacionesArea.id,
+    metadata: {
+      areaId: operacionesArea.id,
+      areaName: operacionesArea.name,
+      assignedByUserId: adminUser.id,
+    },
+    createdAt: daysAgo(120),
+    isRead: true,
+    readAt: daysAgo(119),
+  });
+
+  await ensureNotification({
+    userId: carlosUser.id,
+    notificationTypeId: areaAssignmentTypeId,
+    title: "Nueva asignacion de area",
+    message: `Fuiste asignado al area ${desarrolloArea.name}.`,
+    resourceType: "area",
+    resourceId: desarrolloArea.id,
+    metadata: {
+      areaId: desarrolloArea.id,
+      areaName: desarrolloArea.name,
+      assignedByUserId: adminUser.id,
+    },
+    createdAt: daysAgo(60),
+  });
+
+  await ensureNotification({
+    userId: mateoUser.id,
+    notificationTypeId: areaAssignmentTypeId,
+    title: "Nueva asignacion de area",
+    message: `Fuiste asignado al area ${operacionesArea.name}.`,
+    resourceType: "area",
+    resourceId: operacionesArea.id,
+    metadata: {
+      areaId: operacionesArea.id,
+      areaName: operacionesArea.name,
+      assignedByUserId: adminUser.id,
+    },
+    createdAt: daysAgo(75),
+  });
+
+  await ensureNotification({
+    userId: carlosUser.id,
+    notificationTypeId: projectAssignmentTypeId,
+    title: "Nueva asignacion de proyecto",
+    message: `Fuiste asignado al proyecto ${projectDesarrollo.name}.`,
+    resourceType: "project",
+    resourceId: projectDesarrollo.id,
+    metadata: {
+      projectId: projectDesarrollo.id,
+      projectName: projectDesarrollo.name,
+      membershipId: carlosDevMembership.id,
+      assignedByUserId: adminUser.id,
+    },
+    createdAt: daysAgo(55),
+  });
+
+  await ensureNotification({
+    userId: sofiaUser.id,
+    notificationTypeId: projectAssignmentTypeId,
+    title: "Nueva asignacion de proyecto",
+    message: `Fuiste asignada al proyecto ${projectDesarrollo.name}.`,
+    resourceType: "project",
+    resourceId: projectDesarrollo.id,
+    metadata: {
+      projectId: projectDesarrollo.id,
+      projectName: projectDesarrollo.name,
+      membershipId: sofiaDevMembership.id,
+      assignedByUserId: adminUser.id,
+    },
+    createdAt: daysAgo(52),
+  });
+
+  await ensureNotification({
+    userId: lauraUser.id,
+    notificationTypeId: projectAssignmentTypeId,
+    title: "Nueva asignacion de proyecto",
+    message: `Fuiste asignada al proyecto ${projectOperaciones.name}.`,
+    resourceType: "project",
+    resourceId: projectOperaciones.id,
+    metadata: {
+      projectId: projectOperaciones.id,
+      projectName: projectOperaciones.name,
+      membershipId: lauraSupportMembership.id,
+      assignedByUserId: adminUser.id,
+    },
+    createdAt: daysAgo(70),
+    isRead: true,
+    readAt: daysAgo(69),
+  });
+
+  await ensureNotification({
+    userId: lauraUser.id,
+    notificationTypeId: taskAssignmentTypeId,
+    title: "Nueva tarea asignada",
+    message: `Se te asignó la tarea "${taskBacklogCleanup.title}" en ${projectOperaciones.name}.`,
+    resourceType: "task",
+    resourceId: taskBacklogCleanup.id,
+    metadata: {
+      taskId: taskBacklogCleanup.id,
+      taskTitle: taskBacklogCleanup.title,
+      projectId: projectOperaciones.id,
+      projectName: projectOperaciones.name,
+      assignedByUserId: adminUser.id,
+    },
+    createdAt: daysAgo(2),
+  });
+
+  await ensureNotification({
+    userId: carlosUser.id,
+    notificationTypeId: taskAssignmentTypeId,
+    title: "Nueva tarea asignada",
+    message: `Se te asignó la tarea "${taskApiAuth.title}" en ${projectDesarrollo.name}.`,
+    resourceType: "task",
+    resourceId: taskApiAuth.id,
+    metadata: {
+      taskId: taskApiAuth.id,
+      taskTitle: taskApiAuth.title,
+      projectId: projectDesarrollo.id,
+      projectName: projectDesarrollo.name,
+      assignedByUserId: adminUser.id,
+    },
+    createdAt: daysAgo(6),
+  });
+
+  await ensureNotification({
+    userId: sofiaUser.id,
+    notificationTypeId: taskAssignmentTypeId,
+    title: "Nueva tarea asignada",
+    message: `Se te asignó la tarea "${taskQaSuite.title}" en ${projectDesarrollo.name}.`,
+    resourceType: "task",
+    resourceId: taskQaSuite.id,
+    metadata: {
+      taskId: taskQaSuite.id,
+      taskTitle: taskQaSuite.title,
+      projectId: projectDesarrollo.id,
+      projectName: projectDesarrollo.name,
+      assignedByUserId: carlosUser.id,
+    },
+    createdAt: daysAgo(18),
+    isRead: true,
+    readAt: daysAgo(17),
   });
 }
 
