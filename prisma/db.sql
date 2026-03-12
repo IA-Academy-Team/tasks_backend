@@ -487,9 +487,203 @@ VALUES
     (3, 'task_assignment', 'Asignacion de tarea')
 ON CONFLICT (id) DO NOTHING;
 
+INSERT INTO users (
+    name,
+    email,
+    email_verified,
+    image,
+    phone_number,
+    role_id,
+    is_active
+)
+VALUES
+    (
+        'Admin Principal',
+        'admin@taskapp.local',
+        TRUE,
+        'https://example.com/avatar/admin-principal.png',
+        '+573001000001',
+        1,
+        TRUE
+    ),
+    (
+        'Carlos Desarrollo',
+        'carlos.desarrollo@taskapp.local',
+        TRUE,
+        'https://example.com/avatar/carlos.png',
+        '+573001000003',
+        2,
+        TRUE
+    ),
+    (
+        'Sofia QA',
+        'sofia.qa@taskapp.local',
+        TRUE,
+        'https://example.com/avatar/sofia.png',
+        '+573001000004',
+        2,
+        TRUE
+    ),
+    (
+        'Valentina Inactiva',
+        'valentina.inactiva@taskapp.local',
+        TRUE,
+        'https://example.com/avatar/valentina.png',
+        '+573001000006',
+        2,
+        FALSE
+    )
+ON CONFLICT (email) DO UPDATE
+SET
+    name = EXCLUDED.name,
+    email_verified = EXCLUDED.email_verified,
+    image = EXCLUDED.image,
+    phone_number = EXCLUDED.phone_number,
+    role_id = EXCLUDED.role_id,
+    is_active = EXCLUDED.is_active,
+    updated_at = CURRENT_TIMESTAMP;
+
+INSERT INTO employees (
+    user_id,
+    employee_status_id,
+    deactivated_at
+)
+SELECT
+    u.id,
+    CASE
+        WHEN u.email = 'valentina.inactiva@taskapp.local' THEN 2
+        ELSE 1
+    END AS employee_status_id,
+    CASE
+        WHEN u.email = 'valentina.inactiva@taskapp.local' THEN CURRENT_TIMESTAMP - INTERVAL '45 days'
+        ELSE NULL
+    END AS deactivated_at
+FROM users u
+WHERE u.email IN (
+    'carlos.desarrollo@taskapp.local',
+    'sofia.qa@taskapp.local',
+    'valentina.inactiva@taskapp.local'
+)
+ON CONFLICT (user_id) DO UPDATE
+SET
+    employee_status_id = EXCLUDED.employee_status_id,
+    deactivated_at = EXCLUDED.deactivated_at,
+    updated_at = CURRENT_TIMESTAMP;
+
+INSERT INTO accounts (
+    user_id,
+    provider_id,
+    provider_account_id,
+    scope,
+    password
+)
+SELECT
+    u.id,
+    account_seed.provider_id,
+    CASE
+        WHEN account_seed.provider_id = 'credential' THEN u.id::TEXT
+        ELSE account_seed.provider_account_id
+    END AS provider_account_id,
+    account_seed.scope,
+    account_seed.password
+FROM users u
+JOIN (
+    VALUES
+        (
+            'admin@taskapp.local',
+            'credential',
+            '',
+            'app',
+            '$2b$10$xbnUVyxCRo3b.8cTZTOw6.YjWCEk1cEFNBSP2WHvnwbDM0Q5giCH.'
+        ),
+        (
+            'carlos.desarrollo@taskapp.local',
+            'google',
+            'google-carlos-desarrollo',
+            'openid profile email',
+            NULL
+        ),
+        (
+            'sofia.qa@taskapp.local',
+            'credential',
+            '',
+            'app',
+            '$2b$10$lRn4OXVVr2OCbHHwEwpg/uBeBarmic.bgNOto.SlbYPuYGvDE4Zeq'
+        ),
+        (
+            'valentina.inactiva@taskapp.local',
+            'credential',
+            '',
+            'app',
+            '$2b$10$tluMNZaffja7TM5rlqvgIOuL6sgHbfhffcX98WRekEqxTOYtXe7bW'
+        )
+) AS account_seed(email, provider_id, provider_account_id, scope, password)
+    ON account_seed.email = u.email
+ON CONFLICT (provider_id, provider_account_id) DO UPDATE
+SET
+    user_id = EXCLUDED.user_id,
+    scope = EXCLUDED.scope,
+    password = EXCLUDED.password,
+    updated_at = CURRENT_TIMESTAMP;
+
+INSERT INTO sessions (
+    user_id,
+    token,
+    expires_at,
+    ip_address,
+    user_agent
+)
+SELECT
+    u.id,
+    session_seed.token,
+    CURRENT_TIMESTAMP + session_seed.expires_in,
+    '127.0.0.1',
+    session_seed.user_agent
+FROM users u
+JOIN (
+    VALUES
+        ('admin@taskapp.local', 'sess-admin-principal', INTERVAL '30 days', 'Seeder Admin Agent'),
+        ('carlos.desarrollo@taskapp.local', 'sess-carlos-desarrollo', INTERVAL '15 days', 'Seeder Dev Client'),
+        ('sofia.qa@taskapp.local', 'sess-sofia-qa', INTERVAL '7 days', 'Seeder QA Client')
+) AS session_seed(email, token, expires_in, user_agent)
+    ON session_seed.email = u.email
+ON CONFLICT (token) DO UPDATE
+SET
+    user_id = EXCLUDED.user_id,
+    expires_at = EXCLUDED.expires_at,
+    ip_address = EXCLUDED.ip_address,
+    user_agent = EXCLUDED.user_agent,
+    updated_at = CURRENT_TIMESTAMP;
+
+INSERT INTO verifications (
+    identifier,
+    value,
+    expires_at
+)
+VALUES
+    (
+        'admin@taskapp.local',
+        'verify-admin-email',
+        CURRENT_TIMESTAMP + INTERVAL '2 days'
+    ),
+    (
+        'admin@taskapp.local',
+        'verify-admin-email',
+        CURRENT_TIMESTAMP + INTERVAL '2 days'
+    )
+ON CONFLICT (identifier, value) DO UPDATE
+SET
+    expires_at = EXCLUDED.expires_at,
+    updated_at = CURRENT_TIMESTAMP;
+
 SELECT setval(pg_get_serial_sequence('roles', 'id'), COALESCE((SELECT MAX(id) FROM roles), 1), TRUE);
 SELECT setval(pg_get_serial_sequence('employee_statuses', 'id'), COALESCE((SELECT MAX(id) FROM employee_statuses), 1), TRUE);
 SELECT setval(pg_get_serial_sequence('project_statuses', 'id'), COALESCE((SELECT MAX(id) FROM project_statuses), 1), TRUE);
 SELECT setval(pg_get_serial_sequence('task_statuses', 'id'), COALESCE((SELECT MAX(id) FROM task_statuses), 1), TRUE);
 SELECT setval(pg_get_serial_sequence('task_priorities', 'id'), COALESCE((SELECT MAX(id) FROM task_priorities), 1), TRUE);
 SELECT setval(pg_get_serial_sequence('notification_types', 'id'), COALESCE((SELECT MAX(id) FROM notification_types), 1), TRUE);
+SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE((SELECT MAX(id) FROM users), 1), TRUE);
+SELECT setval(pg_get_serial_sequence('employees', 'id'), COALESCE((SELECT MAX(id) FROM employees), 1), TRUE);
+SELECT setval(pg_get_serial_sequence('accounts', 'id'), COALESCE((SELECT MAX(id) FROM accounts), 1), TRUE);
+SELECT setval(pg_get_serial_sequence('sessions', 'id'), COALESCE((SELECT MAX(id) FROM sessions), 1), TRUE);
+SELECT setval(pg_get_serial_sequence('verifications', 'id'), COALESCE((SELECT MAX(id) FROM verifications), 1), TRUE);
