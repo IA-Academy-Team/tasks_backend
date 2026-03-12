@@ -7,6 +7,6 @@ describe("Live endpoints scenario", () => {
     async () => {
       await runLiveEndpointsScenario();
     },
-    180_000,
+    300_000,
   );
 });
