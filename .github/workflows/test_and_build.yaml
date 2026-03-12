@@ -1,0 +1,73 @@
+name: Backend Test And Build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  quality:
+    name: Type-check, lint, test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: taskapp_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d taskapp_ci"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      NODE_ENV: test
+      PORT: 3006
+      FRONTEND_URL: http://localhost:5173
+      DEV_HOST: http://localhost:5173
+      BACKEND_URL: http://localhost:3006
+      BETTER_AUTH_BASE_PATH: /api/auth/handler
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: taskapp_ci
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/taskapp_ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Sync schema
+        run: npx prisma db push --accept-data-loss --force-reset --skip-generate
+
+      - name: Seed database
+        run: npm run prisma:migrate:seed
+
+      - name: Type-check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
