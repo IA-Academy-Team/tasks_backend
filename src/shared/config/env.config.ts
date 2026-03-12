@@ -7,6 +7,13 @@ dotenv.config({
 // normaliza los valores de las variables de entorno
 const normalize = (value: string | undefined, fallback = '') =>
   (value ?? fallback).toString().trim();
+const toPositiveInteger = (value: string | undefined, fallback: number) => {
+  const parsed = Number.parseInt(normalize(value), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return parsed;
+};
 
 // base de datos
 export const DB_HOST = normalize(process.env.DB_HOST, 'localhost');
@@ -60,3 +67,10 @@ export const FRONTEND_ORIGINS = Array.from(
 );
 
 export const FRONTEND_ORIGIN = FRONTEND_ORIGINS[0] ?? FRONTEND_URL;
+
+// seguridad base (rate limit)
+export const RATE_LIMIT_ENABLED = normalize(process.env.RATE_LIMIT_ENABLED, "true") !== "false";
+export const RATE_LIMIT_WINDOW_MS = toPositiveInteger(process.env.RATE_LIMIT_WINDOW_MS, 60_000);
+export const RATE_LIMIT_MAX = toPositiveInteger(process.env.RATE_LIMIT_MAX, 180);
+export const RATE_LIMIT_AUTH_WINDOW_MS = toPositiveInteger(process.env.RATE_LIMIT_AUTH_WINDOW_MS, 60_000);
+export const RATE_LIMIT_AUTH_MAX = toPositiveInteger(process.env.RATE_LIMIT_AUTH_MAX, 20);
