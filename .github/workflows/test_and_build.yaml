@@ -2,9 +2,7 @@ name: Backend Test And Build
 
 on:
   push:
-    branches: ["**"]
-  pull_request:
-    branches: ["**"]
+    branches: [develop, main]
 
 jobs:
   quality:
