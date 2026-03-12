@@ -17,6 +17,7 @@ import {
 } from "./employees.schemas.js";
 import {
   createEmployee,
+  deleteEmployee,
   getEmployeeById,
   listEmployeeAreaAssignments,
   listEmployeeProjectMemberships,
@@ -107,6 +108,24 @@ employeesRouter.patch("/:employeeId/status", async (req, res, next) => {
   } catch (error) {
     if (error instanceof z.ZodError) {
       next(new AppError(400, "VALIDATION_ERROR", "Invalid employee status payload", error.flatten()));
+      return;
+    }
+
+    next(error);
+  }
+});
+
+employeesRouter.delete("/:employeeId", async (req, res, next) => {
+  try {
+    const { employeeId } = employeeIdParamsSchema.parse(req.params);
+    const authenticatedRequest = req as unknown as AuthenticatedRequest;
+    const actorUserId = authenticatedRequest.auth.user.id;
+    const result = await deleteEmployee(employeeId, actorUserId);
+
+    res.status(200).json({ data: result });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(new AppError(400, "VALIDATION_ERROR", "Invalid employee identifier", error.flatten()));
       return;
     }
 

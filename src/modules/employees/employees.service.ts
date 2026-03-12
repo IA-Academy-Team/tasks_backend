@@ -98,6 +98,11 @@ export interface EmployeeProjectMembershipDto {
   updatedAt: string;
 }
 
+export interface DeleteEmployeeResult {
+  id: number;
+  mode: "deleted" | "archived";
+}
+
 const normalizeRoleName = (roleId: number): AuthRole =>
   roleId === 1 ? "admin" : "employee";
 
@@ -431,6 +436,94 @@ export const updateEmployeeStatus = async (
   ]);
 
   return getEmployeeById(employeeId);
+};
+
+export const deleteEmployee = async (
+  employeeId: number,
+  actorUserId: number,
+): Promise<DeleteEmployeeResult> => {
+  const employee = await getEmployeeOrThrow(employeeId);
+
+  if (employee.userId === actorUserId) {
+    throw new AppError(
+      409,
+      "SELF_DELETION_NOT_ALLOWED",
+      "You cannot delete your own account",
+    );
+  }
+
+  const [activeAreaAssignmentCount, activeProjectMembershipCount] = await Promise.all([
+    prisma.employeeAreaAssignment.count({
+      where: {
+        employeeId,
+        endedAt: null,
+      },
+    }),
+    prisma.projectMembership.count({
+      where: {
+        employeeId,
+        unassignedAt: null,
+      },
+    }),
+  ]);
+
+  if (activeAreaAssignmentCount > 0 || activeProjectMembershipCount > 0) {
+    throw new AppError(
+      409,
+      "EMPLOYEE_HAS_ACTIVE_DEPENDENCIES",
+      "Employee has active area assignments or project memberships",
+      {
+        activeAreaAssignmentCount,
+        activeProjectMembershipCount,
+      },
+    );
+  }
+
+  const [totalAreaAssignmentCount, totalProjectMembershipCount] = await Promise.all([
+    prisma.employeeAreaAssignment.count({
+      where: { employeeId },
+    }),
+    prisma.projectMembership.count({
+      where: { employeeId },
+    }),
+  ]);
+
+  if (totalAreaAssignmentCount === 0 && totalProjectMembershipCount === 0) {
+    await prisma.$transaction([
+      prisma.employee.delete({
+        where: { id: employeeId },
+      }),
+      prisma.user.delete({
+        where: { id: employee.userId },
+      }),
+    ]);
+
+    return {
+      id: employeeId,
+      mode: "deleted",
+    };
+  }
+
+  const statusIds = await getEmployeeStatusIds();
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: employee.userId },
+      data: { isActive: false },
+    }),
+    prisma.employee.update({
+      where: { id: employeeId },
+      data: {
+        employeeStatusId: statusIds.inactive,
+        deactivatedAt: new Date(),
+      },
+    }),
+  ]);
+
+  return {
+    id: employeeId,
+    mode: "archived",
+  };
 };
 
 export const listEmployeeAreaAssignments = async (
