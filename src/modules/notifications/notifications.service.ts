@@ -3,6 +3,11 @@ import type { PrismaClient } from "../../../generated/prisma/client.js";
 import prisma from "../../../prisma/prisma.client.js";
 import { AppError } from "../../shared/http/app-error.js";
 import type { NotificationsListQuery } from "./notifications.schemas.js";
+import {
+  emitNotificationCreatedRealtime,
+  emitNotificationReadRealtime,
+  emitNotificationsReadAllRealtime,
+} from "./notifications.socket.js";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
@@ -68,6 +73,16 @@ const mapNotification = (notification: NotificationRecord): NotificationDto => (
   updatedAt: notification.updatedAt.toISOString(),
 });
 
+const countUnreadNotificationsForUser = async (
+  userId: number,
+  db: DbClient = prisma,
+) => db.notification.count({
+  where: {
+    userId,
+    isRead: false,
+  },
+});
+
 const findNotificationTypeOrThrow = async (typeCode: string, db: DbClient) => {
   const notificationType = await db.notificationType.findUnique({
     where: { code: typeCode },
@@ -88,10 +103,10 @@ const findNotificationTypeOrThrow = async (typeCode: string, db: DbClient) => {
 export const createNotificationRecord = async (
   payload: CreateNotificationInput,
   db: DbClient = prisma,
-) => {
+): Promise<NotificationDto> => {
   const notificationType = await findNotificationTypeOrThrow(payload.typeCode, db);
 
-  return db.notification.create({
+  const createdNotification = await db.notification.create({
     data: {
       userId: payload.userId,
       notificationTypeId: notificationType.id,
@@ -104,7 +119,27 @@ export const createNotificationRecord = async (
         : {}),
       ...(payload.createdAt ? { createdAt: payload.createdAt } : {}),
     },
+    include: {
+      notificationType: {
+        select: {
+          id: true,
+          code: true,
+          name: true,
+        },
+      },
+    },
   });
+
+  const notification = mapNotification(createdNotification as NotificationRecord);
+  const unreadCount = await countUnreadNotificationsForUser(payload.userId, db);
+
+  emitNotificationCreatedRealtime(payload.userId, {
+    notification,
+    unreadCount,
+    issuedAt: new Date().toISOString(),
+  });
+
+  return notification;
 };
 
 export const listNotificationsForUser = async (
@@ -193,7 +228,18 @@ export const markNotificationAsRead = async (
     },
   });
 
-  return mapNotification(updated as NotificationRecord);
+  const mappedNotification = mapNotification(updated as NotificationRecord);
+  const unreadCount = await countUnreadNotificationsForUser(userId);
+  const readAt = mappedNotification.readAt ?? new Date().toISOString();
+
+  emitNotificationReadRealtime(userId, {
+    notificationId: mappedNotification.id,
+    readAt,
+    unreadCount,
+    issuedAt: new Date().toISOString(),
+  });
+
+  return mappedNotification;
 };
 
 export const markAllNotificationsAsRead = async (userId: number): Promise<{ updatedCount: number }> => {
@@ -207,6 +253,12 @@ export const markAllNotificationsAsRead = async (userId: number): Promise<{ upda
       isRead: true,
       readAt: now,
     },
+  });
+
+  emitNotificationsReadAllRealtime(userId, {
+    readAt: now.toISOString(),
+    unreadCount: 0,
+    issuedAt: new Date().toISOString(),
   });
 
   return { updatedCount: result.count };
