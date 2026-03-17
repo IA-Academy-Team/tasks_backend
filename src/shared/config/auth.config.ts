@@ -11,25 +11,11 @@ import {
   FRONTEND_ORIGINS,
   NODE_ENV,
 } from "./env.config.js";
-
-const ALLOWED_EMAIL_DOMAINS = new Set([
-  "campuslands.com",
-  "fundacioncampuslands.com",
-  ...(NODE_ENV === "production" ? [] : ["taskapp.local"]),
-]);
-
-const DOMAIN_ERROR_CODE = "EMAIL_DOMAIN_NOT_ALLOWED";
 const INACTIVE_USER_ERROR_CODE = "USER_INACTIVE";
 
 const toNumericId = (value: string | number) => {
   if (typeof value === "number") return value;
   return Number(value);
-};
-
-const isAllowedEmail = (email?: string | null) => {
-  if (!email) return false;
-  const domain = email.split("@").pop()?.toLowerCase();
-  return Boolean(domain && ALLOWED_EMAIL_DOMAINS.has(domain));
 };
 
 export const auth = betterAuth({
@@ -170,15 +156,7 @@ export const auth = betterAuth({
     user: {
       create: {
         async before(user, ctx) {
-          const email = typeof user.email === "string" ? user.email : "";
-          if (isAllowedEmail(email)) {
-            return { data: user };
-          }
-
-          throw new APIError("FORBIDDEN", {
-            message: DOMAIN_ERROR_CODE,
-            code: DOMAIN_ERROR_CODE,
-          });
+          return { data: user };
         },
       },
     },
@@ -205,13 +183,6 @@ export const auth = betterAuth({
               code: INACTIVE_USER_ERROR_CODE,
             });
           }
-
-          if (isAllowedEmail(user.email)) return;
-
-          throw new APIError("FORBIDDEN", {
-            message: DOMAIN_ERROR_CODE,
-            code: DOMAIN_ERROR_CODE,
-          });
         },
       },
     },

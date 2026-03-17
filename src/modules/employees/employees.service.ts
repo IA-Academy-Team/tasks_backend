@@ -1,6 +1,5 @@
 import bcrypt from "bcrypt";
 import prisma from "../../../prisma/prisma.client.js";
-import { NODE_ENV } from "../../shared/config/env.config.js";
 import { AppError } from "../../shared/http/app-error.js";
 import type { AuthRole } from "../auth/auth.policies.js";
 import { createNotificationRecord } from "../notifications/notifications.service.js";
@@ -10,17 +9,6 @@ import type {
   EmployeesListQuery,
   UpdateEmployeeInput,
 } from "./employees.schemas.js";
-
-const ALLOWED_EMAIL_DOMAINS = new Set([
-  "campuslands.com",
-  "fundacioncampuslands.com",
-  ...(NODE_ENV === "production" ? [] : ["taskapp.local"]),
-]);
-
-const isAllowedEmail = (email: string): boolean => {
-  const domain = email.split("@").pop()?.toLowerCase();
-  return Boolean(domain && ALLOWED_EMAIL_DOMAINS.has(domain));
-};
 
 interface EmployeeWithRelations {
   id: number;
@@ -308,14 +296,6 @@ export const getEmployeeById = async (employeeId: number): Promise<EmployeeDto> 
 };
 
 export const createEmployee = async (payload: CreateEmployeeInput): Promise<EmployeeDto> => {
-  if (!isAllowedEmail(payload.email)) {
-    throw new AppError(
-      400,
-      "EMAIL_DOMAIN_NOT_ALLOWED",
-      "Email domain is not allowed for this environment",
-    );
-  }
-
   const [employeeRoleId, statusIds] = await Promise.all([
     getEmployeeRoleId(),
     getEmployeeStatusIds(),

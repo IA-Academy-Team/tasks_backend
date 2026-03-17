@@ -270,7 +270,7 @@ CREATE TABLE tasks (
     description TEXT,
     planned_start_date DATE NOT NULL,
     due_date DATE NOT NULL,
-    estimated_minutes INTEGER,
+    estimated_minutes INTEGER, 
     deleted_at TIMESTAMPTZ,
     created_by_user_id INT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -507,15 +507,6 @@ VALUES
         TRUE
     ),
     (
-        'Carlos Desarrollo',
-        'carlos.desarrollo@taskapp.local',
-        TRUE,
-        'https://example.com/avatar/carlos.png',
-        '+573001000003',
-        2,
-        TRUE
-    ),
-    (
         'Sofia QA',
         'sofia.qa@taskapp.local',
         TRUE,
@@ -523,15 +514,6 @@ VALUES
         '+573001000004',
         2,
         TRUE
-    ),
-    (
-        'Valentina Inactiva',
-        'valentina.inactiva@taskapp.local',
-        TRUE,
-        'https://example.com/avatar/valentina.png',
-        '+573001000006',
-        2,
-        FALSE
     )
 ON CONFLICT (email) DO UPDATE
 SET
@@ -550,19 +532,11 @@ INSERT INTO employees (
 )
 SELECT
     u.id,
-    CASE
-        WHEN u.email = 'valentina.inactiva@taskapp.local' THEN 2
-        ELSE 1
-    END AS employee_status_id,
-    CASE
-        WHEN u.email = 'valentina.inactiva@taskapp.local' THEN CURRENT_TIMESTAMP - INTERVAL '45 days'
-        ELSE NULL
-    END AS deactivated_at
+    1 AS employee_status_id,
+    NULL AS deactivated_at
 FROM users u
 WHERE u.email IN (
-    'carlos.desarrollo@taskapp.local',
-    'sofia.qa@taskapp.local',
-    'valentina.inactiva@taskapp.local'
+    'sofia.qa@taskapp.local'
 )
 ON CONFLICT (user_id) DO UPDATE
 SET
@@ -597,25 +571,11 @@ JOIN (
             '$2b$10$xbnUVyxCRo3b.8cTZTOw6.YjWCEk1cEFNBSP2WHvnwbDM0Q5giCH.'
         ),
         (
-            'carlos.desarrollo@taskapp.local',
-            'google',
-            'google-carlos-desarrollo',
-            'openid profile email',
-            NULL
-        ),
-        (
             'sofia.qa@taskapp.local',
             'credential',
             '',
             'app',
             '$2b$10$lRn4OXVVr2OCbHHwEwpg/uBeBarmic.bgNOto.SlbYPuYGvDE4Zeq'
-        ),
-        (
-            'valentina.inactiva@taskapp.local',
-            'credential',
-            '',
-            'app',
-            '$2b$10$tluMNZaffja7TM5rlqvgIOuL6sgHbfhffcX98WRekEqxTOYtXe7bW'
         )
 ) AS account_seed(email, provider_id, provider_account_id, scope, password)
     ON account_seed.email = u.email
@@ -643,7 +603,6 @@ FROM users u
 JOIN (
     VALUES
         ('admin@taskapp.local', 'sess-admin-principal', INTERVAL '30 days', 'Seeder Admin Agent'),
-        ('carlos.desarrollo@taskapp.local', 'sess-carlos-desarrollo', INTERVAL '15 days', 'Seeder Dev Client'),
         ('sofia.qa@taskapp.local', 'sess-sofia-qa', INTERVAL '7 days', 'Seeder QA Client')
 ) AS session_seed(email, token, expires_in, user_agent)
     ON session_seed.email = u.email
