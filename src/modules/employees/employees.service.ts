@@ -633,6 +633,60 @@ export const assignEmployeeToArea = async (
   return mapAreaAssignment(result);
 };
 
+export const unassignEmployeeFromArea = async (
+  employeeId: number,
+  actorUserId: number,
+  expectedAreaId?: number,
+): Promise<EmployeeAreaAssignmentDto> => {
+  await getEmployeeOrThrow(employeeId);
+
+  const currentAssignment = await prisma.employeeAreaAssignment.findFirst({
+    where: {
+      employeeId,
+      endedAt: null,
+    },
+    orderBy: { assignedAt: "desc" },
+    include: {
+      area: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  if (!currentAssignment) {
+    throw new AppError(409, "EMPLOYEE_HAS_NO_ACTIVE_AREA", "Employee has no active area assignment");
+  }
+
+  if (expectedAreaId !== undefined && currentAssignment.areaId !== expectedAreaId) {
+    throw new AppError(
+      409,
+      "EMPLOYEE_ACTIVE_AREA_MISMATCH",
+      "Employee active area does not match expected area",
+    );
+  }
+
+  const endedAssignment = await prisma.employeeAreaAssignment.update({
+    where: { id: currentAssignment.id },
+    data: {
+      endedAt: new Date(),
+      endedByUserId: actorUserId,
+    },
+    include: {
+      area: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  return mapAreaAssignment(endedAssignment);
+};
+
 export const listEmployeeProjectMemberships = async (
   employeeId: number,
   query: EmployeeAssignmentsListQuery,
