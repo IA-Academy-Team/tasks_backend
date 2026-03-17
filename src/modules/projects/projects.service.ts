@@ -12,6 +12,11 @@ import type {
   UpdateProjectStatusInput,
 } from "./projects.schemas.js";
 
+type ProjectAccessActor = {
+  userId: number;
+  role: "admin" | "employee";
+};
+
 const PROJECT_STATUS_NAMES = {
   active: "Activo",
   closed: "Cerrado",
@@ -326,6 +331,36 @@ const getProjectMembershipOrThrow = async (
   return membership as unknown as ProjectMembershipRecord;
 };
 
+const resolveEmployeeIdFromUserId = async (userId: number): Promise<number> => {
+  const employee = await prisma.employee.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+
+  if (!employee) {
+    throw new AppError(403, "EMPLOYEE_PROFILE_REQUIRED", "Employee profile is required");
+  }
+
+  return employee.id;
+};
+
+const assertEmployeeCanAccessProject = async (projectId: number, userId: number): Promise<void> => {
+  const employeeId = await resolveEmployeeIdFromUserId(userId);
+
+  const membership = await prisma.projectMembership.findFirst({
+    where: {
+      projectId,
+      employeeId,
+      unassignedAt: null,
+    },
+    select: { id: true },
+  });
+
+  if (!membership) {
+    throw new AppError(403, "PROJECT_FORBIDDEN", "You do not have access to this project");
+  }
+};
+
 const isPrismaErrorWithCode = (error: unknown): error is { code: string } => (
   typeof error === "object"
   && error !== null
@@ -333,7 +368,10 @@ const isPrismaErrorWithCode = (error: unknown): error is { code: string } => (
   && typeof (error as { code: unknown }).code === "string"
 );
 
-export const listProjects = async (query: ProjectsListQuery): Promise<ProjectDto[]> => {
+export const listProjects = async (
+  query: ProjectsListQuery,
+  actor: ProjectAccessActor,
+): Promise<ProjectDto[]> => {
   const where: Prisma.ProjectWhereInput = {};
 
   if (query.areaId !== undefined) {
@@ -342,6 +380,16 @@ export const listProjects = async (query: ProjectsListQuery): Promise<ProjectDto
 
   if (query.status !== "all") {
     where.status = { name: PROJECT_STATUS_NAMES[query.status] };
+  }
+
+  if (actor.role === "employee") {
+    const employeeId = await resolveEmployeeIdFromUserId(actor.userId);
+    where.memberships = {
+      some: {
+        employeeId,
+        unassignedAt: null,
+      },
+    };
   }
 
   const projects = await prisma.project.findMany({
@@ -362,7 +410,14 @@ export const listProjects = async (query: ProjectsListQuery): Promise<ProjectDto
   return projects.map((project) => mapProject(project as unknown as ProjectSummaryRecord));
 };
 
-export const getProjectById = async (projectId: number): Promise<ProjectDto> => {
+export const getProjectById = async (
+  projectId: number,
+  actor?: ProjectAccessActor,
+): Promise<ProjectDto> => {
+  if (actor?.role === "employee") {
+    await assertEmployeeCanAccessProject(projectId, actor.userId);
+  }
+
   const project = await getProjectSummaryOrThrow(projectId);
   return mapProject(project);
 };
@@ -562,7 +617,12 @@ export const deleteProject = async (projectId: number): Promise<DeleteProjectRes
 export const listProjectMemberships = async (
   projectId: number,
   query: ProjectMembershipsListQuery,
+  actor: ProjectAccessActor,
 ): Promise<ProjectMembershipDto[]> => {
+  if (actor.role === "employee") {
+    await assertEmployeeCanAccessProject(projectId, actor.userId);
+  }
+
   await getProjectSummaryOrThrow(projectId);
 
   const where: Prisma.ProjectMembershipWhereInput = { projectId };

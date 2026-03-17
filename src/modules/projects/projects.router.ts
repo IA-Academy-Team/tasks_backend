@@ -37,7 +37,11 @@ projectsRouter.use(requireAuth);
 projectsRouter.get("/", async (req, res, next) => {
   try {
     const query = projectsListQuerySchema.parse(req.query);
-    const projects = await listProjects(query);
+    const authenticatedRequest = req as unknown as AuthenticatedRequest;
+    const projects = await listProjects(query, {
+      userId: authenticatedRequest.auth.user.id,
+      role: authenticatedRequest.auth.user.role,
+    });
 
     res.status(200).json({ data: projects });
   } catch (error) {
@@ -53,7 +57,11 @@ projectsRouter.get("/", async (req, res, next) => {
 projectsRouter.get("/:projectId", async (req, res, next) => {
   try {
     const { projectId } = projectIdParamsSchema.parse(req.params);
-    const project = await getProjectById(projectId);
+    const authenticatedRequest = req as unknown as AuthenticatedRequest;
+    const project = await getProjectById(projectId, {
+      userId: authenticatedRequest.auth.user.id,
+      role: authenticatedRequest.auth.user.role,
+    });
 
     res.status(200).json({ data: project });
   } catch (error) {
@@ -70,7 +78,11 @@ projectsRouter.get("/:projectId/memberships", async (req, res, next) => {
   try {
     const { projectId } = projectIdParamsSchema.parse(req.params);
     const query = projectMembershipsListQuerySchema.parse(req.query);
-    const memberships = await listProjectMemberships(projectId, query);
+    const authenticatedRequest = req as unknown as AuthenticatedRequest;
+    const memberships = await listProjectMemberships(projectId, query, {
+      userId: authenticatedRequest.auth.user.id,
+      role: authenticatedRequest.auth.user.role,
+    });
 
     res.status(200).json({ data: memberships });
   } catch (error) {
