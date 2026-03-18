@@ -56,15 +56,6 @@ const usersSeed = [
     isActive: true,
   },
   {
-    name: "Carlos Desarrollo",
-    email: "carlos.desarrollo@taskapp.local",
-    role: "employee",
-    emailVerified: true,
-    phoneNumber: "+573001000003",
-    image: "https://example.com/avatar/carlos.png",
-    isActive: true,
-  },
-  {
     name: "Sofia QA",
     email: "sofia.qa@taskapp.local",
     role: "employee",
@@ -72,24 +63,6 @@ const usersSeed = [
     phoneNumber: "+573001000004",
     image: "https://example.com/avatar/sofia.png",
     isActive: true,
-  },
-  {
-    name: "Mateo Soporte",
-    email: "mateo.soporte@taskapp.local",
-    role: "employee",
-    emailVerified: false,
-    phoneNumber: "+573001000005",
-    image: "https://example.com/avatar/mateo.png",
-    isActive: true,
-  },
-  {
-    name: "Valentina Inactiva",
-    email: "valentina.inactiva@taskapp.local",
-    role: "employee",
-    emailVerified: true,
-    phoneNumber: "+573001000006",
-    image: "https://example.com/avatar/valentina.png",
-    isActive: false,
   },
 ];
 
@@ -296,6 +269,13 @@ async function ensureAreaAssignment(params: {
   endedAt?: Date | null;
   endedByUserId?: number | null;
 }) {
+  const normalizeEndedAt = (
+    assignedAt: Date,
+    candidateEndedAt: Date,
+  ) => candidateEndedAt > assignedAt
+    ? candidateEndedAt
+    : new Date(assignedAt.getTime() + 1000);
+
   const existing = await prisma.employeeAreaAssignment.findFirst({
     where: {
       employeeId: params.employeeId,
@@ -313,6 +293,38 @@ async function ensureAreaAssignment(params: {
         assignedByUserId: params.assignedByUserId,
       },
     });
+  }
+
+  if ((params.endedAt ?? null) === null) {
+    const currentActiveAssignment = await prisma.employeeAreaAssignment.findFirst({
+      where: {
+        employeeId: params.employeeId,
+        endedAt: null,
+      },
+      orderBy: { assignedAt: "desc" },
+    });
+
+    if (currentActiveAssignment && currentActiveAssignment.areaId === params.areaId) {
+      return prisma.employeeAreaAssignment.update({
+        where: { id: currentActiveAssignment.id },
+        data: {
+          assignedAt: params.assignedAt,
+          assignedByUserId: params.assignedByUserId,
+          endedAt: null,
+          endedByUserId: null,
+        },
+      });
+    }
+
+    if (currentActiveAssignment && currentActiveAssignment.areaId !== params.areaId) {
+      await prisma.employeeAreaAssignment.update({
+        where: { id: currentActiveAssignment.id },
+        data: {
+          endedAt: normalizeEndedAt(currentActiveAssignment.assignedAt, params.assignedAt),
+          endedByUserId: params.assignedByUserId,
+        },
+      });
+    }
   }
 
   return prisma.employeeAreaAssignment.create({
@@ -584,33 +596,22 @@ async function main() {
 
   const adminUser = users.get("admin@taskapp.local")!;
   const lauraUser = users.get("laura.operaciones@taskapp.local")!;
-  const carlosUser = users.get("carlos.desarrollo@taskapp.local")!;
   const sofiaUser = users.get("sofia.qa@taskapp.local")!;
-  const mateoUser = users.get("mateo.soporte@taskapp.local")!;
-  const valentinaUser = users.get("valentina.inactiva@taskapp.local")!;
 
   await ensureAccount(adminUser.id, "credential", String(adminUser.id), "admin123");
   await ensureAccount(lauraUser.id, "credential", String(lauraUser.id), "laura123");
-  await ensureAccount(carlosUser.id, "google", "google-carlos-desarrollo");
   await ensureAccount(sofiaUser.id, "credential", String(sofiaUser.id), "sofia123");
-  await ensureAccount(mateoUser.id, "github", "github-mateo-soporte");
-  await ensureAccount(valentinaUser.id, "credential", String(valentinaUser.id), "valentina123");
 
   await ensureSession(adminUser.id, "sess-admin-principal", 30, "Seeder Admin Agent");
   await ensureSession(lauraUser.id, "sess-laura-operaciones", 15, "Seeder Operations Client");
-  await ensureSession(carlosUser.id, "sess-carlos-desarrollo", 15, "Seeder Dev Client");
   await ensureSession(sofiaUser.id, "sess-sofia-qa", 7, "Seeder QA Client");
 
   await ensureVerification(adminUser.email, "verify-admin-email", 2);
-  await ensureVerification(mateoUser.email, "verify-mateo-email", 3);
   await ensureVerification("reset:laura.operaciones@taskapp.local", "reset-laura-password", 1);
 
   const employees = new Map<string, Awaited<ReturnType<typeof ensureEmployee>>>();
   employees.set(lauraUser.email, await ensureEmployee(lauraUser.id, "Activo"));
-  employees.set(carlosUser.email, await ensureEmployee(carlosUser.id, "Activo"));
   employees.set(sofiaUser.email, await ensureEmployee(sofiaUser.id, "Activo"));
-  employees.set(mateoUser.email, await ensureEmployee(mateoUser.id, "Activo"));
-  employees.set(valentinaUser.email, await ensureEmployee(valentinaUser.id, "Inactivo", daysAgo(45)));
 
   const areas = new Map<string, Awaited<ReturnType<typeof ensureArea>>>();
   for (const area of areasSeed) {
@@ -618,15 +619,11 @@ async function main() {
   }
 
   const lauraEmployee = employees.get(lauraUser.email)!;
-  const carlosEmployee = employees.get(carlosUser.email)!;
   const sofiaEmployee = employees.get(sofiaUser.email)!;
-  const mateoEmployee = employees.get(mateoUser.email)!;
-  const valentinaEmployee = employees.get(valentinaUser.email)!;
 
   const operacionesArea = areas.get("Operaciones")!;
   const desarrolloArea = areas.get("Desarrollo")!;
   const calidadArea = areas.get("Calidad")!;
-  const archivoArea = areas.get("Archivo")!;
 
   await ensureAreaAssignment({
     employeeId: lauraEmployee.id,
@@ -636,19 +633,12 @@ async function main() {
   });
 
   await ensureAreaAssignment({
-    employeeId: carlosEmployee.id,
+    employeeId: sofiaEmployee.id,
     areaId: operacionesArea.id,
     assignedByUserId: adminUser.id,
     assignedAt: daysAgo(150),
-    endedAt: daysAgo(60),
+    endedAt: daysAgo(90),
     endedByUserId: adminUser.id,
-  });
-
-  await ensureAreaAssignment({
-    employeeId: carlosEmployee.id,
-    areaId: desarrolloArea.id,
-    assignedByUserId: adminUser.id,
-    assignedAt: daysAgo(60),
   });
 
   await ensureAreaAssignment({
@@ -659,19 +649,10 @@ async function main() {
   });
 
   await ensureAreaAssignment({
-    employeeId: mateoEmployee.id,
-    areaId: operacionesArea.id,
+    employeeId: lauraEmployee.id,
+    areaId: desarrolloArea.id,
     assignedByUserId: adminUser.id,
-    assignedAt: daysAgo(75),
-  });
-
-  await ensureAreaAssignment({
-    employeeId: valentinaEmployee.id,
-    areaId: archivoArea.id,
-    assignedByUserId: adminUser.id,
-    assignedAt: daysAgo(180),
-    endedAt: daysAgo(45),
-    endedByUserId: adminUser.id,
+    assignedAt: daysAgo(60),
   });
 
   const activeProjectStatusId = await getProjectStatusIdByName("Activo");
@@ -732,25 +713,18 @@ async function main() {
     assignedAt: daysAgo(70),
   });
 
-  const mateoSupportMembership = await ensureProjectMembership({
+  await ensureProjectMembership({
     projectId: projectOperaciones.id,
-    employeeId: mateoEmployee.id,
-    assignedByUserId: adminUser.id,
-    assignedAt: daysAgo(65),
-  });
-
-  const carlosSupportHistoricalMembership = await ensureProjectMembership({
-    projectId: projectOperaciones.id,
-    employeeId: carlosEmployee.id,
+    employeeId: sofiaEmployee.id,
     assignedByUserId: adminUser.id,
     assignedAt: daysAgo(68),
     unassignedAt: daysAgo(58),
     endedByUserId: adminUser.id,
   });
 
-  const carlosDevMembership = await ensureProjectMembership({
+  const lauraDevMembership = await ensureProjectMembership({
     projectId: projectDesarrollo.id,
-    employeeId: carlosEmployee.id,
+    employeeId: lauraEmployee.id,
     assignedByUserId: adminUser.id,
     assignedAt: daysAgo(55),
   });
@@ -795,7 +769,7 @@ async function main() {
 
   const taskApiAuth = await ensureTask({
     projectId: projectDesarrollo.id,
-    assigneeMembershipId: carlosDevMembership.id,
+    assigneeMembershipId: lauraDevMembership.id,
     taskStatusId: taskInProgressStatusId,
     taskPriorityId: highPriorityId,
     title: "Implementar refresh token seguro",
@@ -816,7 +790,7 @@ async function main() {
     plannedStartDate: daysAgo(18),
     dueDate: daysAgo(8),
     estimatedMinutes: 420,
-    createdByUserId: carlosUser.id,
+    createdByUserId: lauraUser.id,
   });
 
   const taskLegacyDocs = await ensureTask({
@@ -866,7 +840,7 @@ async function main() {
     taskId: taskApiAuth.id,
     fromStatusId: taskAssignedStatusId,
     toStatusId: taskInProgressStatusId,
-    changedByUserId: carlosUser.id,
+    changedByUserId: lauraUser.id,
     changedAt: daysAgo(5),
     notes: "Desarrollo inicio implementacion del refresh token.",
   });
@@ -874,7 +848,7 @@ async function main() {
   await ensureTaskTransition({
     taskId: taskQaSuite.id,
     toStatusId: taskAssignedStatusId,
-    changedByUserId: carlosUser.id,
+    changedByUserId: lauraUser.id,
     changedAt: daysAgo(18),
     notes: "Tarea creada para automatizacion QA.",
   });
@@ -935,9 +909,9 @@ async function main() {
   const authSessionEnd = addHours(authSessionStart, 3);
   await ensureTaskWorkSession({
     taskId: taskApiAuth.id,
-    projectMembershipId: carlosDevMembership.id,
-    startedByUserId: carlosUser.id,
-    endedByUserId: carlosUser.id,
+    projectMembershipId: lauraDevMembership.id,
+    startedByUserId: lauraUser.id,
+    endedByUserId: lauraUser.id,
     startedAt: authSessionStart,
     endedAt: authSessionEnd,
   });
@@ -990,10 +964,10 @@ async function main() {
   });
 
   await ensureNotification({
-    userId: carlosUser.id,
+    userId: lauraUser.id,
     notificationTypeId: areaAssignmentTypeId,
     title: "Nueva asignacion de area",
-    message: `Fuiste asignado al area ${desarrolloArea.name}.`,
+    message: `Fuiste asignada al area ${desarrolloArea.name}.`,
     resourceType: "area",
     resourceId: desarrolloArea.id,
     metadata: {
@@ -1005,31 +979,16 @@ async function main() {
   });
 
   await ensureNotification({
-    userId: mateoUser.id,
-    notificationTypeId: areaAssignmentTypeId,
-    title: "Nueva asignacion de area",
-    message: `Fuiste asignado al area ${operacionesArea.name}.`,
-    resourceType: "area",
-    resourceId: operacionesArea.id,
-    metadata: {
-      areaId: operacionesArea.id,
-      areaName: operacionesArea.name,
-      assignedByUserId: adminUser.id,
-    },
-    createdAt: daysAgo(75),
-  });
-
-  await ensureNotification({
-    userId: carlosUser.id,
+    userId: lauraUser.id,
     notificationTypeId: projectAssignmentTypeId,
     title: "Nueva asignacion de proyecto",
-    message: `Fuiste asignado al proyecto ${projectDesarrollo.name}.`,
+    message: `Fuiste asignada al proyecto ${projectDesarrollo.name}.`,
     resourceType: "project",
     resourceId: projectDesarrollo.id,
     metadata: {
       projectId: projectDesarrollo.id,
       projectName: projectDesarrollo.name,
-      membershipId: carlosDevMembership.id,
+      membershipId: lauraDevMembership.id,
       assignedByUserId: adminUser.id,
     },
     createdAt: daysAgo(55),
@@ -1087,7 +1046,7 @@ async function main() {
   });
 
   await ensureNotification({
-    userId: carlosUser.id,
+    userId: lauraUser.id,
     notificationTypeId: taskAssignmentTypeId,
     title: "Nueva tarea asignada",
     message: `Se te asignó la tarea "${taskApiAuth.title}" en ${projectDesarrollo.name}.`,
@@ -1115,7 +1074,7 @@ async function main() {
       taskTitle: taskQaSuite.title,
       projectId: projectDesarrollo.id,
       projectName: projectDesarrollo.name,
-      assignedByUserId: carlosUser.id,
+      assignedByUserId: lauraUser.id,
     },
     createdAt: daysAgo(18),
     isRead: true,

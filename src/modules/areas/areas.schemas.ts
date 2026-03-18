@@ -31,6 +31,10 @@ export const updateAreaSchema = z.object({
   message: "At least one editable field is required",
 });
 
+export const updateAreaStatusSchema = z.object({
+  isActive: z.boolean(),
+});
+
 export const areaIdParamsSchema = z.object({
   areaId: z.coerce.number().int().positive(),
 });
@@ -38,4 +42,4 @@ export const areaIdParamsSchema = z.object({
 export type AreasListQuery = z.infer<typeof areasListQuerySchema>;
 export type CreateAreaInput = z.infer<typeof createAreaSchema>;
 export type UpdateAreaInput = z.infer<typeof updateAreaSchema>;
-
+export type UpdateAreaStatusInput = z.infer<typeof updateAreaStatusSchema>;

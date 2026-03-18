@@ -12,6 +12,7 @@ import {
   createEmployeeSchema,
   employeeIdParamsSchema,
   employeesListQuerySchema,
+  unassignEmployeeAreaSchema,
   updateEmployeeSchema,
   updateEmployeeStatusSchema,
 } from "./employees.schemas.js";
@@ -23,6 +24,7 @@ import {
   listEmployeeProjectMemberships,
   listEmployees,
   assignEmployeeToArea,
+  unassignEmployeeFromArea,
   updateEmployee,
   updateEmployeeStatus,
 } from "./employees.service.js";
@@ -170,6 +172,30 @@ employeesRouter.post("/:employeeId/area-assignments", async (req, res, next) => 
         400,
         "VALIDATION_ERROR",
         "Invalid employee area assignment payload",
+        error.flatten(),
+      ));
+      return;
+    }
+
+    next(error);
+  }
+});
+
+employeesRouter.patch("/:employeeId/area-assignments/unassign", async (req, res, next) => {
+  try {
+    const { employeeId } = employeeIdParamsSchema.parse(req.params);
+    const payload = unassignEmployeeAreaSchema.parse(req.body ?? {});
+    const authenticatedRequest = req as unknown as AuthenticatedRequest;
+    const actorUserId = authenticatedRequest.auth.user.id;
+    const assignment = await unassignEmployeeFromArea(employeeId, actorUserId, payload.areaId);
+
+    res.status(200).json({ data: assignment });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(new AppError(
+        400,
+        "VALIDATION_ERROR",
+        "Invalid employee area unassignment payload",
         error.flatten(),
       ));
       return;

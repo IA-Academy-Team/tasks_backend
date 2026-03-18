@@ -7,6 +7,7 @@ import {
   areasListQuerySchema,
   createAreaSchema,
   updateAreaSchema,
+  updateAreaStatusSchema,
 } from "./areas.schemas.js";
 import {
   createArea,
@@ -14,6 +15,7 @@ import {
   getAreaById,
   listAreas,
   updateArea,
+  updateAreaStatus,
 } from "./areas.service.js";
 
 export const areasRouter = Router();
@@ -85,6 +87,23 @@ areasRouter.patch("/:areaId", async (req, res, next) => {
   }
 });
 
+areasRouter.patch("/:areaId/status", async (req, res, next) => {
+  try {
+    const { areaId } = areaIdParamsSchema.parse(req.params);
+    const payload = updateAreaStatusSchema.parse(req.body);
+    const area = await updateAreaStatus(areaId, payload);
+
+    res.status(200).json({ data: area });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(new AppError(400, "VALIDATION_ERROR", "Invalid area status payload", error.flatten()));
+      return;
+    }
+
+    next(error);
+  }
+});
+
 areasRouter.delete("/:areaId", async (req, res, next) => {
   try {
     const { areaId } = areaIdParamsSchema.parse(req.params);
@@ -100,4 +119,3 @@ areasRouter.delete("/:areaId", async (req, res, next) => {
     next(error);
   }
 });
-

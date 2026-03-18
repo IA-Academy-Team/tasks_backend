@@ -60,9 +60,14 @@ export const assignEmployeeAreaSchema = z.object({
   areaId: z.coerce.number().int().positive(),
 });
 
+export const unassignEmployeeAreaSchema = z.object({
+  areaId: z.coerce.number().int().positive().optional(),
+});
+
 export type EmployeesListQuery = z.infer<typeof employeesListQuerySchema>;
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
 export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;
 export type UpdateEmployeeStatusInput = z.infer<typeof updateEmployeeStatusSchema>;
 export type EmployeeAssignmentsListQuery = z.infer<typeof employeeAssignmentsListQuerySchema>;
 export type AssignEmployeeAreaInput = z.infer<typeof assignEmployeeAreaSchema>;
+export type UnassignEmployeeAreaInput = z.infer<typeof unassignEmployeeAreaSchema>;

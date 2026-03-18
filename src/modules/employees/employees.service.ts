@@ -1,6 +1,5 @@
 import bcrypt from "bcrypt";
 import prisma from "../../../prisma/prisma.client.js";
-import { NODE_ENV } from "../../shared/config/env.config.js";
 import { AppError } from "../../shared/http/app-error.js";
 import type { AuthRole } from "../auth/auth.policies.js";
 import { createNotificationRecord } from "../notifications/notifications.service.js";
@@ -10,17 +9,6 @@ import type {
   EmployeesListQuery,
   UpdateEmployeeInput,
 } from "./employees.schemas.js";
-
-const ALLOWED_EMAIL_DOMAINS = new Set([
-  "campuslands.com",
-  "fundacioncampuslands.com",
-  ...(NODE_ENV === "production" ? [] : ["taskapp.local"]),
-]);
-
-const isAllowedEmail = (email: string): boolean => {
-  const domain = email.split("@").pop()?.toLowerCase();
-  return Boolean(domain && ALLOWED_EMAIL_DOMAINS.has(domain));
-};
 
 interface EmployeeWithRelations {
   id: number;
@@ -43,6 +31,7 @@ interface EmployeeWithRelations {
   areaAssignments: Array<{
     areaId: number;
     assignedAt: Date;
+    endedAt: Date | null;
     area: { id: number; name: string };
   }>;
 }
@@ -63,6 +52,10 @@ export interface EmployeeDto {
   deactivatedAt: string | null;
   currentAreaId: number | null;
   currentAreaName: string | null;
+  areaIds: number[];
+  areaNames: string[];
+  assignedAreaIds: number[];
+  assignedAreaNames: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -107,7 +100,26 @@ const normalizeRoleName = (roleId: number): AuthRole =>
   roleId === 1 ? "admin" : "employee";
 
 const mapEmployee = (employee: EmployeeWithRelations): EmployeeDto => {
-  const currentAreaAssignment = employee.areaAssignments[0];
+  const sortedAssignments = [...employee.areaAssignments]
+    .sort((left, right) => right.assignedAt.getTime() - left.assignedAt.getTime());
+  const sortedActiveAssignments = [...employee.areaAssignments]
+    .filter((assignment) => assignment.endedAt === null)
+    .sort((left, right) => right.assignedAt.getTime() - left.assignedAt.getTime());
+  const currentAreaAssignment = sortedActiveAssignments[0];
+
+  const assignedAreaById = new Map<number, string>();
+  sortedAssignments.forEach((assignment) => {
+    if (!assignedAreaById.has(assignment.area.id)) {
+      assignedAreaById.set(assignment.area.id, assignment.area.name);
+    }
+  });
+
+  const areaById = new Map<number, string>();
+  sortedActiveAssignments.forEach((assignment) => {
+    if (!areaById.has(assignment.area.id)) {
+      areaById.set(assignment.area.id, assignment.area.name);
+    }
+  });
 
   return {
     id: employee.id,
@@ -125,6 +137,10 @@ const mapEmployee = (employee: EmployeeWithRelations): EmployeeDto => {
     deactivatedAt: employee.deactivatedAt?.toISOString() ?? null,
     currentAreaId: currentAreaAssignment?.area.id ?? null,
     currentAreaName: currentAreaAssignment?.area.name ?? null,
+    areaIds: [...areaById.keys()],
+    areaNames: [...areaById.values()],
+    assignedAreaIds: [...assignedAreaById.keys()],
+    assignedAreaNames: [...assignedAreaById.values()],
     createdAt: employee.createdAt.toISOString(),
     updatedAt: employee.updatedAt.toISOString(),
   };
@@ -183,12 +199,11 @@ const getEmployeeOrThrow = async (employeeId: number): Promise<EmployeeWithRelat
       },
       status: { select: { id: true, name: true } },
       areaAssignments: {
-        where: { endedAt: null },
         orderBy: { assignedAt: "desc" },
-        take: 1,
         select: {
           areaId: true,
           assignedAt: true,
+          endedAt: true,
           area: { select: { id: true, name: true } },
         },
       },
@@ -287,12 +302,11 @@ export const listEmployees = async (query: EmployeesListQuery): Promise<Employee
       },
       status: { select: { id: true, name: true } },
       areaAssignments: {
-        where: { endedAt: null },
         orderBy: { assignedAt: "desc" },
-        take: 1,
         select: {
           areaId: true,
           assignedAt: true,
+          endedAt: true,
           area: { select: { id: true, name: true } },
         },
       },
@@ -308,14 +322,6 @@ export const getEmployeeById = async (employeeId: number): Promise<EmployeeDto> 
 };
 
 export const createEmployee = async (payload: CreateEmployeeInput): Promise<EmployeeDto> => {
-  if (!isAllowedEmail(payload.email)) {
-    throw new AppError(
-      400,
-      "EMAIL_DOMAIN_NOT_ALLOWED",
-      "Email domain is not allowed for this environment",
-    );
-  }
-
   const [employeeRoleId, statusIds] = await Promise.all([
     getEmployeeRoleId(),
     getEmployeeStatusIds(),
@@ -651,6 +657,60 @@ export const assignEmployeeToArea = async (
   });
 
   return mapAreaAssignment(result);
+};
+
+export const unassignEmployeeFromArea = async (
+  employeeId: number,
+  actorUserId: number,
+  expectedAreaId?: number,
+): Promise<EmployeeAreaAssignmentDto> => {
+  await getEmployeeOrThrow(employeeId);
+
+  const currentAssignment = await prisma.employeeAreaAssignment.findFirst({
+    where: {
+      employeeId,
+      endedAt: null,
+    },
+    orderBy: { assignedAt: "desc" },
+    include: {
+      area: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  if (!currentAssignment) {
+    throw new AppError(409, "EMPLOYEE_HAS_NO_ACTIVE_AREA", "Employee has no active area assignment");
+  }
+
+  if (expectedAreaId !== undefined && currentAssignment.areaId !== expectedAreaId) {
+    throw new AppError(
+      409,
+      "EMPLOYEE_ACTIVE_AREA_MISMATCH",
+      "Employee active area does not match expected area",
+    );
+  }
+
+  const endedAssignment = await prisma.employeeAreaAssignment.update({
+    where: { id: currentAssignment.id },
+    data: {
+      endedAt: new Date(),
+      endedByUserId: actorUserId,
+    },
+    include: {
+      area: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  return mapAreaAssignment(endedAssignment);
 };
 
 export const listEmployeeProjectMemberships = async (

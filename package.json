@@ -5,11 +5,11 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "dev": "nodemon --watch src --ext ts --exec \"tsx src/index.ts\"",
+    "dev": "npx prisma generate && nodemon --watch src --ext ts --exec \"tsx src/index.ts\"",
     "dev:swagger": "npm run swagger:generate && npm run dev",
     "debug": "node --inspect=9229 --enable-source-maps --import tsx src/index.ts",
     "debug:swagger": "npm run swagger:generate && npm run debug",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "npx prisma generate && tsc -p tsconfig.build.json",
     "type-check": "tsc -p tsconfig.build.json --noEmit",
     "lint": "eslint .",
     "start": "node dist/index.js",
