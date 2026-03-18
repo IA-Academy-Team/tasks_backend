@@ -7,17 +7,21 @@ import {
   type AuthenticatedRequest,
 } from "../auth/auth.middleware.js";
 import {
+  createStandaloneTaskSchema,
   createTaskSchema,
+  standaloneTasksListQuerySchema,
   taskIdParamsSchema,
   tasksListQuerySchema,
   transitionTaskStatusSchema,
   updateTaskSchema,
 } from "./tasks.schemas.js";
 import {
+  createStandaloneTask,
   createTask,
   deleteTask,
   getTaskById,
   getTaskHistory,
+  listStandaloneTasks,
   listTasks,
   transitionTaskStatus,
   updateTask,
@@ -36,6 +40,26 @@ tasksRouter.get("/", async (req, res, next) => {
   } catch (error) {
     if (error instanceof z.ZodError) {
       next(new AppError(400, "VALIDATION_ERROR", "Invalid tasks query", error.flatten()));
+      return;
+    }
+
+    next(error);
+  }
+});
+
+tasksRouter.get("/standalone", async (req, res, next) => {
+  try {
+    const query = standaloneTasksListQuerySchema.parse(req.query);
+    const authenticatedRequest = req as unknown as AuthenticatedRequest;
+    const tasks = await listStandaloneTasks(query, {
+      userId: authenticatedRequest.auth.user.id,
+      role: authenticatedRequest.auth.user.role,
+    });
+
+    res.status(200).json({ data: tasks });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(new AppError(400, "VALIDATION_ERROR", "Invalid standalone tasks query", error.flatten()));
       return;
     }
 
@@ -86,6 +110,26 @@ tasksRouter.post("/", requireRole("admin"), async (req, res, next) => {
   } catch (error) {
     if (error instanceof z.ZodError) {
       next(new AppError(400, "VALIDATION_ERROR", "Invalid task payload", error.flatten()));
+      return;
+    }
+
+    next(error);
+  }
+});
+
+tasksRouter.post("/standalone", async (req, res, next) => {
+  try {
+    const payload = createStandaloneTaskSchema.parse(req.body);
+    const authenticatedRequest = req as unknown as AuthenticatedRequest;
+    const result = await createStandaloneTask(payload, {
+      userId: authenticatedRequest.auth.user.id,
+      role: authenticatedRequest.auth.user.role,
+    });
+
+    res.status(201).json({ data: result });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(new AppError(400, "VALIDATION_ERROR", "Invalid standalone task payload", error.flatten()));
       return;
     }
 

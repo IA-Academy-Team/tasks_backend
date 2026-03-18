@@ -25,17 +25,7 @@ const taskRecurrenceSchema = z.object({
   untilDate: z.coerce.date(),
 });
 
-export const taskIdParamsSchema = z.object({
-  taskId: z.coerce.number().int().positive(),
-});
-
-export const tasksListQuerySchema = z.object({
-  projectId: z.coerce.number().int().positive().optional(),
-  status: z.enum(["all", "assigned", "in_progress", "done"]).optional().default("all"),
-  includeDeleted: queryBoolean.optional().default(false),
-});
-
-export const createTaskSchema = z.object({
+const baseCreateTaskObjectSchema = z.object({
   projectId: z.coerce.number().int().positive(),
   title: z.string().trim().min(3).max(160),
   description: nullableTrimmedString
@@ -49,7 +39,24 @@ export const createTaskSchema = z.object({
   assigneeMembershipId: nullablePositiveInt.optional(),
   estimatedMinutes: nullablePositiveInt.optional(),
   recurrence: taskRecurrenceSchema.optional(),
-}).refine((payload) => payload.dueDate >= payload.plannedStartDate, {
+});
+
+export const taskIdParamsSchema = z.object({
+  taskId: z.coerce.number().int().positive(),
+});
+
+export const tasksListQuerySchema = z.object({
+  projectId: z.coerce.number().int().positive().optional(),
+  status: z.enum(["all", "assigned", "in_progress", "done"]).optional().default("all"),
+  includeDeleted: queryBoolean.optional().default(false),
+});
+
+export const standaloneTasksListQuerySchema = z.object({
+  status: z.enum(["all", "assigned", "in_progress", "done"]).optional().default("all"),
+  includeDeleted: queryBoolean.optional().default(false),
+});
+
+export const createTaskSchema = baseCreateTaskObjectSchema.refine((payload) => payload.dueDate >= payload.plannedStartDate, {
   message: "dueDate must be greater than or equal to plannedStartDate",
   path: ["dueDate"],
 }).refine((payload) => (
@@ -59,6 +66,26 @@ export const createTaskSchema = z.object({
   message: "recurrence.untilDate must be greater than or equal to dueDate",
   path: ["recurrence", "untilDate"],
 });
+
+export const createStandaloneTaskSchema = baseCreateTaskObjectSchema
+  .omit({
+    projectId: true,
+    assigneeMembershipId: true,
+  })
+  .extend({
+    assigneeEmployeeId: nullablePositiveInt.optional(),
+  })
+  .refine((payload) => payload.dueDate >= payload.plannedStartDate, {
+    message: "dueDate must be greater than or equal to plannedStartDate",
+    path: ["dueDate"],
+  })
+  .refine((payload) => (
+    !payload.recurrence
+    || payload.recurrence.untilDate >= payload.dueDate
+  ), {
+    message: "recurrence.untilDate must be greater than or equal to dueDate",
+    path: ["recurrence", "untilDate"],
+  });
 
 export const updateTaskSchema = z.object({
   title: z.string().trim().min(3).max(160).optional(),
@@ -87,5 +114,7 @@ export const transitionTaskStatusSchema = z.object({
 
 export type TasksListQuery = z.infer<typeof tasksListQuerySchema>;
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;
+export type StandaloneTasksListQuery = z.infer<typeof standaloneTasksListQuerySchema>;
+export type CreateStandaloneTaskInput = z.infer<typeof createStandaloneTaskSchema>;
 export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
 export type TransitionTaskStatusInput = z.infer<typeof transitionTaskStatusSchema>;

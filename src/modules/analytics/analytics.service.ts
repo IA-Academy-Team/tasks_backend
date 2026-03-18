@@ -299,7 +299,10 @@ const buildTaskWhereClausesFromFilters = (
   filters: AnalyticsBaseFilters,
   dateField: AnalyticsDateFilterField,
 ): Prisma.TaskWhereInput[] => {
-  const whereClauses: Prisma.TaskWhereInput[] = [{ deletedAt: null }];
+  const whereClauses: Prisma.TaskWhereInput[] = [
+    { deletedAt: null },
+    { projectId: { not: null } },
+  ];
 
   if (filters.projectId !== undefined) {
     whereClauses.push({ projectId: filters.projectId });
