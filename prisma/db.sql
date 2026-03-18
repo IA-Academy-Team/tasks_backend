@@ -262,7 +262,7 @@ CREATE TABLE project_memberships (
 
 CREATE TABLE tasks (
     id SERIAL PRIMARY KEY,
-    project_id INT NOT NULL,
+    project_id INT,
     assignee_membership_id INT,
     task_status_id INT NOT NULL DEFAULT 1,
     task_priority_id INT NOT NULL DEFAULT 2,
@@ -277,7 +277,7 @@ CREATE TABLE tasks (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_tasks_project
         FOREIGN KEY (project_id) REFERENCES projects (id)
-        ON DELETE RESTRICT,
+        ON DELETE SET NULL,
     CONSTRAINT fk_tasks_assignee_membership
         FOREIGN KEY (assignee_membership_id) REFERENCES project_memberships (id)
         ON DELETE RESTRICT,

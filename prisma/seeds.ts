@@ -269,6 +269,13 @@ async function ensureAreaAssignment(params: {
   endedAt?: Date | null;
   endedByUserId?: number | null;
 }) {
+  const normalizeEndedAt = (
+    assignedAt: Date,
+    candidateEndedAt: Date,
+  ) => candidateEndedAt > assignedAt
+    ? candidateEndedAt
+    : new Date(assignedAt.getTime() + 1000);
+
   const existing = await prisma.employeeAreaAssignment.findFirst({
     where: {
       employeeId: params.employeeId,
@@ -286,6 +293,38 @@ async function ensureAreaAssignment(params: {
         assignedByUserId: params.assignedByUserId,
       },
     });
+  }
+
+  if ((params.endedAt ?? null) === null) {
+    const currentActiveAssignment = await prisma.employeeAreaAssignment.findFirst({
+      where: {
+        employeeId: params.employeeId,
+        endedAt: null,
+      },
+      orderBy: { assignedAt: "desc" },
+    });
+
+    if (currentActiveAssignment && currentActiveAssignment.areaId === params.areaId) {
+      return prisma.employeeAreaAssignment.update({
+        where: { id: currentActiveAssignment.id },
+        data: {
+          assignedAt: params.assignedAt,
+          assignedByUserId: params.assignedByUserId,
+          endedAt: null,
+          endedByUserId: null,
+        },
+      });
+    }
+
+    if (currentActiveAssignment && currentActiveAssignment.areaId !== params.areaId) {
+      await prisma.employeeAreaAssignment.update({
+        where: { id: currentActiveAssignment.id },
+        data: {
+          endedAt: normalizeEndedAt(currentActiveAssignment.assignedAt, params.assignedAt),
+          endedByUserId: params.assignedByUserId,
+        },
+      });
+    }
   }
 
   return prisma.employeeAreaAssignment.create({
