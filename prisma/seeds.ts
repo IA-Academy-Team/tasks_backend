@@ -87,11 +87,50 @@ const areasSeed = [
     description: "Area historica para reasignaciones y cierres administrativos.",
     isActive: false,
   },
+  {
+    name: "Producto",
+    description: "Definicion y priorizacion de roadmap funcional.",
+    isActive: true,
+  },
+  {
+    name: "Infraestructura",
+    description: "Operacion de entornos, despliegues y observabilidad.",
+    isActive: true,
+  },
+  {
+    name: "Datos",
+    description: "Modelado analitico y reporteria operativa.",
+    isActive: true,
+  },
+  {
+    name: "Atencion Cliente",
+    description: "Seguimiento de casos criticos y comunicacion externa.",
+    isActive: true,
+  },
+];
+
+const extraEmployeeFirstNames = [
+  "Carlos", "Mariana", "Andres", "Valentina", "Diego", "Camila", "Jorge", "Natalia", "Felipe", "Paula",
+  "Ricardo", "Daniela", "Mateo", "Gabriela", "Nicolas", "Alejandra", "Santiago", "Lucia", "Sebastian", "Manuela",
+  "Juan", "Carolina", "David", "Laura", "Miguel", "Tatiana", "Oscar", "Angela", "Ivan", "Juliana",
+];
+
+const extraEmployeeLastNames = [
+  "Gomez", "Rodriguez", "Hernandez", "Lopez", "Martinez", "Garcia", "Ramirez", "Castro", "Torres", "Ruiz",
+  "Morales", "Vargas", "Suarez", "Silva", "Ortega", "Rojas", "Mendoza", "Acosta", "Jimenez", "Pineda",
 ];
 
 type CatalogItem = { id: number; name: string };
 
-type UserSeed = (typeof usersSeed)[number];
+type UserSeed = {
+  name: string;
+  email: string;
+  role: "admin" | "employee";
+  emailVerified: boolean;
+  phoneNumber: string;
+  image: string;
+  isActive: boolean;
+};
 type AreaSeed = (typeof areasSeed)[number];
 
 async function upsertCatalog<T extends CatalogItem>(
@@ -111,6 +150,38 @@ function daysAgo(days: number) {
 
 function addHours(date: Date, hours: number) {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+function slugify(input: string) {
+  return input
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)+/g, "");
+}
+
+function buildExtraEmployeeSeeds(total: number): UserSeed[] {
+  const records: UserSeed[] = [];
+
+  for (let index = 0; index < total; index += 1) {
+    const firstName = extraEmployeeFirstNames[index % extraEmployeeFirstNames.length]!;
+    const lastName = extraEmployeeLastNames[(index * 3) % extraEmployeeLastNames.length]!;
+    const sequence = String(index + 1).padStart(2, "0");
+    const slugBase = `${slugify(firstName)}.${slugify(lastName)}.${sequence}`;
+
+    records.push({
+      name: `${firstName} ${lastName}`,
+      email: `${slugBase}@taskapp.local`,
+      role: "employee",
+      emailVerified: true,
+      phoneNumber: `+57312${String(1000000 + index)}`,
+      image: `https://example.com/avatar/${slugBase}.png`,
+      isActive: index % 9 !== 0,
+    });
+  }
+
+  return records;
 }
 
 async function getRoleIdByName(name: string) {
@@ -370,7 +441,6 @@ async function ensureProjectMembership(params: {
     where: {
       projectId: params.projectId,
       employeeId: params.employeeId,
-      assignedAt: params.assignedAt,
     },
   });
 
@@ -378,6 +448,7 @@ async function ensureProjectMembership(params: {
     return prisma.projectMembership.update({
       where: { id: existing.id },
       data: {
+        assignedAt: params.assignedAt,
         assignedByUserId: params.assignedByUserId,
         unassignedAt: params.unassignedAt ?? null,
         endedByUserId: params.endedByUserId ?? null,
@@ -459,7 +530,6 @@ async function ensureTaskWorkSession(params: {
   const existing = await prisma.taskWorkSession.findFirst({
     where: {
       taskId: params.taskId,
-      startedAt: params.startedAt,
     },
   });
 
@@ -470,6 +540,7 @@ async function ensureTaskWorkSession(params: {
         projectMembershipId: params.projectMembershipId,
         startedByUserId: params.startedByUserId,
         endedByUserId: params.endedByUserId ?? null,
+        startedAt: params.startedAt,
         endedAt: params.endedAt ?? null,
       },
     });
@@ -589,8 +660,13 @@ async function main() {
     }),
   );
 
+  const expandedUsersSeed = [
+    ...usersSeed,
+    ...buildExtraEmployeeSeeds(42),
+  ];
+
   const users = new Map<string, Awaited<ReturnType<typeof ensureUser>>>();
-  for (const seed of usersSeed) {
+  for (const seed of expandedUsersSeed) {
     users.set(seed.email, await ensureUser(seed));
   }
 
@@ -602,16 +678,45 @@ async function main() {
   await ensureAccount(lauraUser.id, "credential", String(lauraUser.id), "laura123");
   await ensureAccount(sofiaUser.id, "credential", String(sofiaUser.id), "sofia123");
 
+  for (const seed of expandedUsersSeed) {
+    if (seed.role !== "employee") continue;
+    const user = users.get(seed.email);
+    if (!user) continue;
+    await ensureAccount(user.id, "credential", String(user.id), "employee123");
+  }
+
   await ensureSession(adminUser.id, "sess-admin-principal", 30, "Seeder Admin Agent");
   await ensureSession(lauraUser.id, "sess-laura-operaciones", 15, "Seeder Operations Client");
   await ensureSession(sofiaUser.id, "sess-sofia-qa", 7, "Seeder QA Client");
+
+  const employeeSessionUsers = expandedUsersSeed
+    .filter((seed) => seed.role === "employee")
+    .slice(0, 16);
+
+  for (const [index, seed] of employeeSessionUsers.entries()) {
+    const user = users.get(seed.email);
+    if (!user) continue;
+    await ensureSession(
+      user.id,
+      `sess-${slugify(seed.name)}-${index + 1}`,
+      5 + (index % 20),
+      "Seeder Employee Client",
+    );
+  }
 
   await ensureVerification(adminUser.email, "verify-admin-email", 2);
   await ensureVerification("reset:laura.operaciones@taskapp.local", "reset-laura-password", 1);
 
   const employees = new Map<string, Awaited<ReturnType<typeof ensureEmployee>>>();
-  employees.set(lauraUser.email, await ensureEmployee(lauraUser.id, "Activo"));
-  employees.set(sofiaUser.email, await ensureEmployee(sofiaUser.id, "Activo"));
+  for (const seed of expandedUsersSeed) {
+    if (seed.role !== "employee") continue;
+    const user = users.get(seed.email);
+    if (!user) continue;
+
+    const statusName = seed.isActive ? "Activo" : "Inactivo";
+    const deactivatedAt = seed.isActive ? null : daysAgo(15 + (seed.email.length % 45));
+    employees.set(seed.email, await ensureEmployee(user.id, statusName, deactivatedAt));
+  }
 
   const areas = new Map<string, Awaited<ReturnType<typeof ensureArea>>>();
   for (const area of areasSeed) {
@@ -624,6 +729,10 @@ async function main() {
   const operacionesArea = areas.get("Operaciones")!;
   const desarrolloArea = areas.get("Desarrollo")!;
   const calidadArea = areas.get("Calidad")!;
+  const productoArea = areas.get("Producto")!;
+  const infraestructuraArea = areas.get("Infraestructura")!;
+  const datosArea = areas.get("Datos")!;
+  const atencionClienteArea = areas.get("Atencion Cliente")!;
 
   await ensureAreaAssignment({
     employeeId: lauraEmployee.id,
@@ -654,6 +763,55 @@ async function main() {
     assignedByUserId: adminUser.id,
     assignedAt: daysAgo(60),
   });
+
+  const activeAreasForDistribution = [
+    operacionesArea,
+    desarrolloArea,
+    calidadArea,
+    productoArea,
+    infraestructuraArea,
+    datosArea,
+    atencionClienteArea,
+  ];
+
+  const extraEmployeeSeeds = expandedUsersSeed.filter((seed) =>
+    seed.role === "employee"
+    && seed.email !== lauraUser.email
+    && seed.email !== sofiaUser.email);
+
+  for (const [index, seed] of extraEmployeeSeeds.entries()) {
+    const employee = employees.get(seed.email);
+    const user = users.get(seed.email);
+    if (!employee || !user) continue;
+
+    const targetArea = activeAreasForDistribution[index % activeAreasForDistribution.length]!;
+    const assignedAt = daysAgo(190 - index * 2);
+
+    if (index % 5 === 0) {
+      const previousArea = activeAreasForDistribution[(index + 2) % activeAreasForDistribution.length]!;
+      await ensureAreaAssignment({
+        employeeId: employee.id,
+        areaId: previousArea.id,
+        assignedByUserId: adminUser.id,
+        assignedAt: daysAgo(260 - index * 2),
+        endedAt: daysAgo(200 - index * 2),
+        endedByUserId: adminUser.id,
+      });
+    }
+
+    await ensureAreaAssignment({
+      employeeId: employee.id,
+      areaId: targetArea.id,
+      assignedByUserId: adminUser.id,
+      assignedAt,
+      ...(seed.isActive
+        ? {}
+        : {
+          endedAt: daysAgo(10 + (index % 25)),
+          endedByUserId: adminUser.id,
+        }),
+    });
+  }
 
   const activeProjectStatusId = await getProjectStatusIdByName("Activo");
   const closedProjectStatusId = await getProjectStatusIdByName("Cerrado");
@@ -706,6 +864,44 @@ async function main() {
     closedAt: daysAgo(80),
   });
 
+  const generatedProjects: Awaited<ReturnType<typeof ensureProject>>[] = [];
+  const projectAreas = [
+    operacionesArea,
+    desarrolloArea,
+    calidadArea,
+    productoArea,
+    infraestructuraArea,
+    datosArea,
+    atencionClienteArea,
+  ];
+
+  for (const [areaIndex, area] of projectAreas.entries()) {
+    for (let cycle = 1; cycle <= 4; cycle += 1) {
+      const projectOrder = areaIndex * 4 + cycle;
+      const statusSelector = projectOrder % 9;
+      const projectStatusId = statusSelector <= 5
+        ? activeProjectStatusId
+        : statusSelector <= 7
+          ? closedProjectStatusId
+          : cancelledProjectStatusId;
+
+      const isClosed = projectStatusId !== activeProjectStatusId;
+      const endDate = isClosed ? daysAgo(20 + projectOrder) : null;
+
+      const project = await ensureProject({
+        areaId: area.id,
+        projectStatusId,
+        name: `${area.name} - Operacion ${String(projectOrder).padStart(2, "0")}`,
+        description: `Flujo operativo de ${area.name} para ejecucion continua del ciclo ${projectOrder}.`,
+        startDate: daysAgo(180 - projectOrder * 3),
+        endDate,
+        closedAt: isClosed ? endDate : null,
+      });
+
+      generatedProjects.push(project);
+    }
+  }
+
   const lauraSupportMembership = await ensureProjectMembership({
     projectId: projectOperaciones.id,
     employeeId: lauraEmployee.id,
@@ -753,6 +949,66 @@ async function main() {
     unassignedAt: daysAgo(80),
     endedByUserId: adminUser.id,
   });
+
+  const generatedMembershipsByProject = new Map<number, Awaited<ReturnType<typeof ensureProjectMembership>>[]>();
+  const employeeById = new Map<number, Awaited<ReturnType<typeof ensureEmployee>>>();
+  for (const employee of employees.values()) {
+    employeeById.set(employee.id, employee);
+  }
+
+  const activeAreaAssignments = await prisma.employeeAreaAssignment.findMany({
+    where: { endedAt: null },
+    select: {
+      employeeId: true,
+      areaId: true,
+    },
+  });
+  const activeAreaByEmployeeId = new Map<number, number>();
+  for (const assignment of activeAreaAssignments) {
+    activeAreaByEmployeeId.set(assignment.employeeId, assignment.areaId);
+  }
+
+  const employeeSeedByEmail = new Map<string, UserSeed>();
+  for (const seed of expandedUsersSeed) {
+    employeeSeedByEmail.set(seed.email, seed);
+  }
+
+  const activeEmployeePool = Array.from(employees.entries())
+    .map(([email, employee]) => ({ email, employee, seed: employeeSeedByEmail.get(email) }))
+    .filter((entry) => entry.seed?.role === "employee" && entry.seed.isActive);
+
+  for (const [projectIndex, project] of generatedProjects.entries()) {
+    const areaEmployees = activeEmployeePool
+      .filter((entry) => activeAreaByEmployeeId.get(entry.employee.id) === project.areaId);
+    const candidates = areaEmployees.length >= 3 ? areaEmployees : activeEmployeePool;
+    const membersToAssign = Math.min(6, Math.max(3, 3 + (projectIndex % 4)));
+    const assignedEmployeeIds = new Set<number>();
+
+    const memberships: Awaited<ReturnType<typeof ensureProjectMembership>>[] = [];
+    for (let memberIndex = 0; memberIndex < candidates.length && memberships.length < membersToAssign; memberIndex += 1) {
+      const candidate = candidates[(projectIndex * 2 + memberIndex) % candidates.length];
+      if (!candidate) continue;
+      if (assignedEmployeeIds.has(candidate.employee.id)) continue;
+      assignedEmployeeIds.add(candidate.employee.id);
+
+      const isClosedProject = project.projectStatusId !== activeProjectStatusId;
+      const assignedAt = daysAgo(170 - projectIndex * 3 - memberIndex);
+      const unassignedAt = isClosedProject ? daysAgo(15 + projectIndex + memberIndex) : null;
+
+      const membership = await ensureProjectMembership({
+        projectId: project.id,
+        employeeId: candidate.employee.id,
+        assignedByUserId: adminUser.id,
+        assignedAt,
+        unassignedAt,
+        endedByUserId: unassignedAt ? adminUser.id : null,
+      });
+
+      memberships.push(membership);
+    }
+
+    generatedMembershipsByProject.set(project.id, memberships);
+  }
 
   const taskBacklogCleanup = await ensureTask({
     projectId: projectOperaciones.id,
@@ -945,6 +1201,106 @@ async function main() {
     startedAt: reportSessionStart,
     endedAt: reportSessionEnd,
   });
+
+  for (const [projectIndex, project] of generatedProjects.entries()) {
+    const memberships = generatedMembershipsByProject.get(project.id) ?? [];
+    const tasksPerProject = project.projectStatusId === activeProjectStatusId ? 14 : 9;
+
+    for (let taskIndex = 0; taskIndex < tasksPerProject; taskIndex += 1) {
+      const selector = (projectIndex + taskIndex) % 10;
+      const taskStatusId = project.projectStatusId !== activeProjectStatusId
+        ? selector < 7
+          ? taskDoneStatusId
+          : selector < 9
+            ? taskInProgressStatusId
+            : taskAssignedStatusId
+        : selector < 4
+          ? taskAssignedStatusId
+          : selector < 7
+            ? taskInProgressStatusId
+            : taskDoneStatusId;
+      const taskPriorityId = selector < 2 ? highPriorityId : selector < 7 ? mediumPriorityId : lowPriorityId;
+
+      const dueDate = taskStatusId === taskDoneStatusId
+        ? daysAgo(20 - ((projectIndex + taskIndex) % 14))
+        : taskStatusId === taskInProgressStatusId
+          ? daysAgo(2 - ((projectIndex + taskIndex) % 5))
+          : daysAgo(-1 * (1 + ((projectIndex + taskIndex) % 10)));
+      const plannedStartDate = new Date(dueDate);
+      plannedStartDate.setUTCDate(plannedStartDate.getUTCDate() - (3 + (taskIndex % 5)));
+
+      const assigneeMembership = memberships.length > 0
+        ? memberships[taskIndex % memberships.length] ?? null
+        : null;
+      const assigneeEmployee = assigneeMembership
+        ? employeeById.get(assigneeMembership.employeeId)
+        : null;
+      const changedByUserId = assigneeEmployee?.userId ?? adminUser.id;
+
+      const task = await ensureTask({
+        projectId: project.id,
+        assigneeMembershipId: assigneeMembership?.id ?? null,
+        taskStatusId,
+        taskPriorityId,
+        title: `${project.name} · Tarea ${String(taskIndex + 1).padStart(2, "0")}`,
+        description: `Actividad operativa del proyecto ${project.name}, lote ${projectIndex + 1}.`,
+        plannedStartDate,
+        dueDate,
+        estimatedMinutes: 60 + ((taskIndex % 8) * 45),
+        createdByUserId: adminUser.id,
+      });
+
+      await ensureTaskTransition({
+        taskId: task.id,
+        toStatusId: taskAssignedStatusId,
+        changedByUserId: adminUser.id,
+        changedAt: plannedStartDate,
+        notes: "Tarea creada dentro del seed masivo.",
+      });
+
+      if (taskStatusId === taskInProgressStatusId || taskStatusId === taskDoneStatusId) {
+        const inProgressAt = addHours(plannedStartDate, 6);
+        await ensureTaskTransition({
+          taskId: task.id,
+          fromStatusId: taskAssignedStatusId,
+          toStatusId: taskInProgressStatusId,
+          changedByUserId,
+          changedAt: inProgressAt,
+          notes: "Inicio de ejecucion en flujo operativo.",
+        });
+      }
+
+      if (taskStatusId === taskDoneStatusId) {
+        const doneAt = addHours(plannedStartDate, 12 + (taskIndex % 6));
+        await ensureTaskTransition({
+          taskId: task.id,
+          fromStatusId: taskInProgressStatusId,
+          toStatusId: taskDoneStatusId,
+          changedByUserId,
+          changedAt: doneAt,
+          notes: "Tarea completada dentro del ciclo semanal.",
+        });
+      }
+
+      if (assigneeMembership) {
+        const sessionStart = addHours(plannedStartDate, 2);
+        const shouldKeepOpenSession = taskStatusId === taskInProgressStatusId
+          && project.projectStatusId === activeProjectStatusId
+          && taskIndex % 6 === 0;
+
+        await ensureTaskWorkSession({
+          taskId: task.id,
+          projectMembershipId: assigneeMembership.id,
+          startedByUserId: changedByUserId,
+          endedByUserId: shouldKeepOpenSession ? null : changedByUserId,
+          startedAt: sessionStart,
+          endedAt: shouldKeepOpenSession
+            ? null
+            : addHours(sessionStart, 1.2 + (taskIndex % 4) * 0.6),
+        });
+      }
+    }
+  }
 
   await ensureNotification({
     userId: lauraUser.id,
