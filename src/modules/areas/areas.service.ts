@@ -4,6 +4,7 @@ import type {
   AreasListQuery,
   CreateAreaInput,
   UpdateAreaInput,
+  UpdateAreaStatusInput,
 } from "./areas.schemas.js";
 
 export interface AreaDto {
@@ -206,6 +207,11 @@ export const updateArea = async (
     activeProjectCount: 0,
   });
 };
+
+export const updateAreaStatus = async (
+  areaId: number,
+  payload: UpdateAreaStatusInput,
+): Promise<AreaDto> => updateArea(areaId, { isActive: payload.isActive });
 
 export const deleteArea = async (areaId: number): Promise<DeleteAreaResult> => {
   await getAreaOrThrow(areaId);

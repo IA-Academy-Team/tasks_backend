@@ -80,9 +80,9 @@ tasksRouter.post("/", requireRole("admin"), async (req, res, next) => {
     const payload = createTaskSchema.parse(req.body);
     const authenticatedRequest = req as unknown as AuthenticatedRequest;
     const actorUserId = authenticatedRequest.auth.user.id;
-    const task = await createTask(payload, actorUserId);
+    const result = await createTask(payload, actorUserId);
 
-    res.status(201).json({ data: task });
+    res.status(201).json({ data: result });
   } catch (error) {
     if (error instanceof z.ZodError) {
       next(new AppError(400, "VALIDATION_ERROR", "Invalid task payload", error.flatten()));

@@ -31,6 +31,7 @@ interface EmployeeWithRelations {
   areaAssignments: Array<{
     areaId: number;
     assignedAt: Date;
+    endedAt: Date | null;
     area: { id: number; name: string };
   }>;
 }
@@ -51,6 +52,10 @@ export interface EmployeeDto {
   deactivatedAt: string | null;
   currentAreaId: number | null;
   currentAreaName: string | null;
+  areaIds: number[];
+  areaNames: string[];
+  assignedAreaIds: number[];
+  assignedAreaNames: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -95,7 +100,26 @@ const normalizeRoleName = (roleId: number): AuthRole =>
   roleId === 1 ? "admin" : "employee";
 
 const mapEmployee = (employee: EmployeeWithRelations): EmployeeDto => {
-  const currentAreaAssignment = employee.areaAssignments[0];
+  const sortedAssignments = [...employee.areaAssignments]
+    .sort((left, right) => right.assignedAt.getTime() - left.assignedAt.getTime());
+  const sortedActiveAssignments = [...employee.areaAssignments]
+    .filter((assignment) => assignment.endedAt === null)
+    .sort((left, right) => right.assignedAt.getTime() - left.assignedAt.getTime());
+  const currentAreaAssignment = sortedActiveAssignments[0];
+
+  const assignedAreaById = new Map<number, string>();
+  sortedAssignments.forEach((assignment) => {
+    if (!assignedAreaById.has(assignment.area.id)) {
+      assignedAreaById.set(assignment.area.id, assignment.area.name);
+    }
+  });
+
+  const areaById = new Map<number, string>();
+  sortedActiveAssignments.forEach((assignment) => {
+    if (!areaById.has(assignment.area.id)) {
+      areaById.set(assignment.area.id, assignment.area.name);
+    }
+  });
 
   return {
     id: employee.id,
@@ -113,6 +137,10 @@ const mapEmployee = (employee: EmployeeWithRelations): EmployeeDto => {
     deactivatedAt: employee.deactivatedAt?.toISOString() ?? null,
     currentAreaId: currentAreaAssignment?.area.id ?? null,
     currentAreaName: currentAreaAssignment?.area.name ?? null,
+    areaIds: [...areaById.keys()],
+    areaNames: [...areaById.values()],
+    assignedAreaIds: [...assignedAreaById.keys()],
+    assignedAreaNames: [...assignedAreaById.values()],
     createdAt: employee.createdAt.toISOString(),
     updatedAt: employee.updatedAt.toISOString(),
   };
@@ -171,12 +199,11 @@ const getEmployeeOrThrow = async (employeeId: number): Promise<EmployeeWithRelat
       },
       status: { select: { id: true, name: true } },
       areaAssignments: {
-        where: { endedAt: null },
         orderBy: { assignedAt: "desc" },
-        take: 1,
         select: {
           areaId: true,
           assignedAt: true,
+          endedAt: true,
           area: { select: { id: true, name: true } },
         },
       },
@@ -275,12 +302,11 @@ export const listEmployees = async (query: EmployeesListQuery): Promise<Employee
       },
       status: { select: { id: true, name: true } },
       areaAssignments: {
-        where: { endedAt: null },
         orderBy: { assignedAt: "desc" },
-        take: 1,
         select: {
           areaId: true,
           assignedAt: true,
+          endedAt: true,
           area: { select: { id: true, name: true } },
         },
       },

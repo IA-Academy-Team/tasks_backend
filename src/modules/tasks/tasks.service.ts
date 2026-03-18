@@ -98,6 +98,12 @@ export interface DeleteTaskResult {
   deletedAt: string;
 }
 
+export interface CreateTaskResult {
+  task: TaskDto;
+  createdCount: number;
+  createdTaskIds: number[];
+}
+
 interface TransitionTaskActor {
   userId: number;
   role: AuthRole;
@@ -364,6 +370,86 @@ const validateTaskDates = (plannedStartDate: Date, dueDate: Date) => {
   }
 };
 
+const addDaysToDate = (source: Date, days: number): Date => {
+  const result = new Date(source);
+  result.setUTCDate(result.getUTCDate() + days);
+  return result;
+};
+
+const addMonthsToDate = (source: Date, months: number): Date => {
+  const year = source.getUTCFullYear();
+  const month = source.getUTCMonth();
+  const day = source.getUTCDate();
+
+  const monthAnchor = new Date(Date.UTC(year, month + months, 1));
+  const lastDayOfTargetMonth = new Date(
+    Date.UTC(monthAnchor.getUTCFullYear(), monthAnchor.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  const targetDay = Math.min(day, lastDayOfTargetMonth);
+
+  return new Date(
+    Date.UTC(
+      monthAnchor.getUTCFullYear(),
+      monthAnchor.getUTCMonth(),
+      targetDay,
+    ),
+  );
+};
+
+const buildRecurringTaskSchedule = (payload: CreateTaskInput): Array<{ plannedStartDate: Date; dueDate: Date }> => {
+  if (!payload.recurrence) {
+    return [{ plannedStartDate: payload.plannedStartDate, dueDate: payload.dueDate }];
+  }
+
+  const { recurrence } = payload;
+  const every = recurrence.every ?? 1;
+  const untilDate = recurrence.untilDate;
+
+  if (untilDate < payload.dueDate) {
+    throw new AppError(
+      400,
+      "TASK_RECURRENCE_UNTIL_INVALID",
+      "Recurrence end date must be greater than or equal to due date",
+    );
+  }
+
+  const schedule: Array<{ plannedStartDate: Date; dueDate: Date }> = [];
+  let plannedStartDate = payload.plannedStartDate;
+  let dueDate = payload.dueDate;
+  const maxOccurrences = 400;
+
+  while (dueDate <= untilDate) {
+    schedule.push({ plannedStartDate, dueDate });
+    if (schedule.length > maxOccurrences) {
+      throw new AppError(
+        400,
+        "TASK_RECURRENCE_LIMIT_EXCEEDED",
+        `Recurrence exceeded the allowed maximum of ${maxOccurrences} tasks`,
+      );
+    }
+
+    if (recurrence.frequency === "monthly") {
+      plannedStartDate = addMonthsToDate(plannedStartDate, every);
+      dueDate = addMonthsToDate(dueDate, every);
+      continue;
+    }
+
+    const daysStep = recurrence.frequency === "weekly" ? every * 7 : every;
+    plannedStartDate = addDaysToDate(plannedStartDate, daysStep);
+    dueDate = addDaysToDate(dueDate, daysStep);
+  }
+
+  if (schedule.length === 0) {
+    throw new AppError(
+      400,
+      "TASK_RECURRENCE_EMPTY_SCHEDULE",
+      "Recurrence configuration produced no task instances",
+    );
+  }
+
+  return schedule;
+};
+
 const ensureProjectAvailableForTask = async (projectId: number) => {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
@@ -559,53 +645,59 @@ export const getTaskById = async (taskId: number): Promise<TaskDto> => {
 export const createTask = async (
   payload: CreateTaskInput,
   actorUserId: number,
-): Promise<TaskDto> => {
+): Promise<CreateTaskResult> => {
   const project = await ensureProjectAvailableForTask(payload.projectId);
   await ensureTaskPriorityExists(payload.taskPriorityId);
   validateTaskDates(payload.plannedStartDate, payload.dueDate);
+  const recurrenceSchedule = buildRecurringTaskSchedule(payload);
   const assignedStatusId = await getAssignedStatusId();
   const assigneeMembershipId = await ensureValidAssigneeMembership(
     payload.projectId,
     payload.assigneeMembershipId ?? null,
   );
 
-  const createdTask = await prisma.$transaction(async (tx) => {
-    const task = await tx.task.create({
-      data: {
-        projectId: payload.projectId,
-        taskStatusId: assignedStatusId,
-        taskPriorityId: payload.taskPriorityId,
-        title: payload.title,
-        description: payload.description ?? null,
-        plannedStartDate: payload.plannedStartDate,
-        dueDate: payload.dueDate,
-        estimatedMinutes: payload.estimatedMinutes ?? null,
-        assigneeMembershipId,
-        createdByUserId: actorUserId,
-      },
-      select: { id: true },
-    });
-
-    await tx.taskStatusTransition.create({
-      data: {
-        taskId: task.id,
-        fromStatusId: null,
-        toStatusId: assignedStatusId,
-        changedByUserId: actorUserId,
-      },
-    });
-
-    if (assigneeMembershipId !== null) {
-      const membership = await tx.projectMembership.findUnique({
-        where: { id: assigneeMembershipId },
-        select: {
-          id: true,
-          employeeId: true,
-          employee: {
-            select: {
-              userId: true,
+  const createdTaskIds = await prisma.$transaction(async (tx) => {
+    const createdIds: number[] = [];
+    const membership = assigneeMembershipId === null
+      ? null
+      : await tx.projectMembership.findUnique({
+          where: { id: assigneeMembershipId },
+          select: {
+            id: true,
+            employeeId: true,
+            employee: {
+              select: {
+                userId: true,
+              },
             },
           },
+        });
+
+    for (const occurrence of recurrenceSchedule) {
+      const task = await tx.task.create({
+        data: {
+          projectId: payload.projectId,
+          taskStatusId: assignedStatusId,
+          taskPriorityId: payload.taskPriorityId,
+          title: payload.title,
+          description: payload.description ?? null,
+          plannedStartDate: occurrence.plannedStartDate,
+          dueDate: occurrence.dueDate,
+          estimatedMinutes: payload.estimatedMinutes ?? null,
+          assigneeMembershipId,
+          createdByUserId: actorUserId,
+        },
+        select: { id: true },
+      });
+
+      createdIds.push(task.id);
+
+      await tx.taskStatusTransition.create({
+        data: {
+          taskId: task.id,
+          fromStatusId: null,
+          toStatusId: assignedStatusId,
+          changedByUserId: actorUserId,
         },
       });
 
@@ -630,10 +722,20 @@ export const createTask = async (
       }
     }
 
-    return task;
+    return createdIds;
   });
 
-  return getTaskById(createdTask.id);
+  const primaryTaskId = createdTaskIds.at(0);
+  if (!primaryTaskId) {
+    throw new AppError(500, "TASK_CREATION_FAILED", "Task creation did not produce any records");
+  }
+
+  const primaryTask = await getTaskById(primaryTaskId);
+  return {
+    task: primaryTask,
+    createdCount: createdTaskIds.length,
+    createdTaskIds,
+  };
 };
 
 export const updateTask = async (

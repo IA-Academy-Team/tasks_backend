@@ -19,6 +19,12 @@ const nullablePositiveInt = z.preprocess(
   z.union([z.coerce.number().int().positive(), z.null()]),
 );
 
+const taskRecurrenceSchema = z.object({
+  frequency: z.enum(["daily", "weekly", "monthly", "range_interval"]),
+  every: z.coerce.number().int().positive().max(365).optional().default(1),
+  untilDate: z.coerce.date(),
+});
+
 export const taskIdParamsSchema = z.object({
   taskId: z.coerce.number().int().positive(),
 });
@@ -42,9 +48,16 @@ export const createTaskSchema = z.object({
   taskPriorityId: z.coerce.number().int().positive().optional().default(2),
   assigneeMembershipId: nullablePositiveInt.optional(),
   estimatedMinutes: nullablePositiveInt.optional(),
+  recurrence: taskRecurrenceSchema.optional(),
 }).refine((payload) => payload.dueDate >= payload.plannedStartDate, {
   message: "dueDate must be greater than or equal to plannedStartDate",
   path: ["dueDate"],
+}).refine((payload) => (
+  !payload.recurrence
+  || payload.recurrence.untilDate >= payload.dueDate
+), {
+  message: "recurrence.untilDate must be greater than or equal to dueDate",
+  path: ["recurrence", "untilDate"],
 });
 
 export const updateTaskSchema = z.object({
