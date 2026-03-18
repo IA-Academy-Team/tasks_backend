@@ -726,7 +726,7 @@ export const listTasks = async (query: TasksListQuery): Promise<TaskDto[]> => {
 
   if (query.projectId !== undefined) {
     where.projectId = query.projectId;
-  } else {
+  } else if (!query.includeStandalone) {
     where.projectId = { not: null };
   }
 

@@ -49,6 +49,7 @@ export const tasksListQuerySchema = z.object({
   projectId: z.coerce.number().int().positive().optional(),
   status: z.enum(["all", "assigned", "in_progress", "done"]).optional().default("all"),
   includeDeleted: queryBoolean.optional().default(false),
+  includeStandalone: queryBoolean.optional().default(false),
 });
 
 export const standaloneTasksListQuerySchema = z.object({

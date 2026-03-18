@@ -125,7 +125,7 @@ type CatalogItem = { id: number; name: string };
 type UserSeed = {
   name: string;
   email: string;
-  role: "admin" | "employee";
+  role: string;
   emailVerified: boolean;
   phoneNumber: string;
   image: string;
