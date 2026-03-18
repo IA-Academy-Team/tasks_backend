@@ -264,6 +264,7 @@ CREATE TABLE tasks (
     id SERIAL PRIMARY KEY,
     project_id INT,
     assignee_membership_id INT,
+    assignee_employee_id INT,
     task_status_id INT NOT NULL DEFAULT 1,
     task_priority_id INT NOT NULL DEFAULT 2,
     title VARCHAR(160) NOT NULL,
@@ -280,6 +281,9 @@ CREATE TABLE tasks (
         ON DELETE SET NULL,
     CONSTRAINT fk_tasks_assignee_membership
         FOREIGN KEY (assignee_membership_id) REFERENCES project_memberships (id)
+        ON DELETE RESTRICT,
+    CONSTRAINT fk_tasks_assignee_employee
+        FOREIGN KEY (assignee_employee_id) REFERENCES employees (id)
         ON DELETE RESTRICT,
     CONSTRAINT fk_tasks_status
         FOREIGN KEY (task_status_id) REFERENCES task_statuses (id)
@@ -418,6 +422,9 @@ CREATE INDEX idx_tasks_project_status_id
 
 CREATE INDEX idx_tasks_assignee_status_id
     ON tasks (assignee_membership_id, task_status_id);
+
+CREATE INDEX idx_tasks_assignee_employee_id
+    ON tasks (assignee_employee_id);
 
 CREATE INDEX idx_tasks_task_priority_id
     ON tasks (task_priority_id);
