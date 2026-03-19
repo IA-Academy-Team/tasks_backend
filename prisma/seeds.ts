@@ -152,6 +152,18 @@ function addHours(date: Date, hours: number) {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
 }
 
+function utcDateAtNoon(year: number, monthIndex: number, day: number) {
+  return new Date(Date.UTC(year, monthIndex, day, 12, 0, 0));
+}
+
+function getDaysInUtcMonth(year: number, monthIndex: number) {
+  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+}
+
+function clampDay(day: number, maxDay: number) {
+  return Math.min(Math.max(day, 1), maxDay);
+}
+
 function slugify(input: string) {
   return input
     .toLowerCase()
@@ -829,6 +841,71 @@ async function main() {
   const projectAssignmentTypeId = await getNotificationTypeIdByCode("project_assignment");
   const taskAssignmentTypeId = await getNotificationTypeIdByCode("task_assignment");
 
+  const ensureCompletedComplianceTask = async (params: {
+    projectId: number;
+    membershipId: number;
+    changedByUserId: number;
+    title: string;
+    description: string;
+    plannedStartDate: Date;
+    dueDate: Date;
+    doneAt: Date;
+    estimatedMinutes: number;
+    actualMinutes: number;
+    taskPriorityId: number;
+  }) => {
+    const task = await ensureTask({
+      projectId: params.projectId,
+      assigneeMembershipId: params.membershipId,
+      taskStatusId: taskDoneStatusId,
+      taskPriorityId: params.taskPriorityId,
+      title: params.title,
+      description: params.description,
+      plannedStartDate: params.plannedStartDate,
+      dueDate: params.dueDate,
+      estimatedMinutes: params.estimatedMinutes,
+      createdByUserId: adminUser.id,
+    });
+
+    await ensureTaskTransition({
+      taskId: task.id,
+      toStatusId: taskAssignedStatusId,
+      changedByUserId: adminUser.id,
+      changedAt: params.plannedStartDate,
+      notes: "Tarea creada para muestra del trend de cumplimiento.",
+    });
+
+    await ensureTaskTransition({
+      taskId: task.id,
+      fromStatusId: taskAssignedStatusId,
+      toStatusId: taskInProgressStatusId,
+      changedByUserId: params.changedByUserId,
+      changedAt: addHours(params.plannedStartDate, 6),
+      notes: "Inicio operativo de tarea para trazabilidad semanal.",
+    });
+
+    await ensureTaskTransition({
+      taskId: task.id,
+      fromStatusId: taskInProgressStatusId,
+      toStatusId: taskDoneStatusId,
+      changedByUserId: params.changedByUserId,
+      changedAt: params.doneAt,
+      notes: "Cierre para consolidar metrica del compliance trend.",
+    });
+
+    const sessionStart = addHours(params.plannedStartDate, 8);
+    await ensureTaskWorkSession({
+      taskId: task.id,
+      projectMembershipId: params.membershipId,
+      startedByUserId: params.changedByUserId,
+      endedByUserId: params.changedByUserId,
+      startedAt: sessionStart,
+      endedAt: addHours(sessionStart, params.actualMinutes / 60),
+    });
+
+    return task;
+  };
+
   const projectOperaciones = await ensureProject({
     areaId: operacionesArea.id,
     projectStatusId: activeProjectStatusId,
@@ -1301,6 +1378,82 @@ async function main() {
         });
       }
     }
+  }
+
+  const latestProjectTask = await prisma.task.findFirst({
+    where: {
+      deletedAt: null,
+      projectId: { not: null },
+    },
+    orderBy: [{ dueDate: "desc" }, { id: "desc" }],
+    select: { dueDate: true },
+  });
+
+  const trendAnchorDate = latestProjectTask?.dueDate ?? new Date();
+  const trendYear = trendAnchorDate.getUTCFullYear();
+  const trendMonthIndex = trendAnchorDate.getUTCMonth();
+  const trendDaysInMonth = getDaysInUtcMonth(trendYear, trendMonthIndex);
+  const trendWeekCount = Math.max(1, Math.ceil(trendDaysInMonth / 7));
+  const trendMonthLabel = `${trendYear}-${String(trendMonthIndex + 1).padStart(2, "0")}`;
+  const trendMembershipPool = [lauraSupportMembership, lauraDevMembership, sofiaDevMembership];
+
+  for (let weekIndex = 0; weekIndex < trendWeekCount; weekIndex += 1) {
+    const weekStartDay = weekIndex * 7 + 1;
+    const toTrendDate = (dayOffset: number) => utcDateAtNoon(
+      trendYear,
+      trendMonthIndex,
+      clampDay(weekStartDay + dayOffset, trendDaysInMonth),
+    );
+
+    const dueOnTime = toTrendDate(1);
+    const dueEstimateDelayed = toTrendDate(3);
+    const dueDateOverdue = toTrendDate(5);
+
+    const membership = trendMembershipPool[weekIndex % trendMembershipPool.length]!;
+    const changedByUserId = employeeById.get(membership.employeeId)?.userId ?? adminUser.id;
+    const trendPrefix = `[Trend ${trendMonthLabel}] W${String(weekIndex + 1).padStart(2, "0")}`;
+
+    await ensureCompletedComplianceTask({
+      projectId: projectDesarrollo.id,
+      membershipId: membership.id,
+      changedByUserId,
+      title: `${trendPrefix} · On Time`,
+      description: "Caso controlado de cumplimiento dentro de la ventana prevista.",
+      plannedStartDate: addHours(dueOnTime, -96),
+      dueDate: dueOnTime,
+      doneAt: addHours(dueOnTime, -10),
+      estimatedMinutes: 180,
+      actualMinutes: 150,
+      taskPriorityId: mediumPriorityId,
+    });
+
+    await ensureCompletedComplianceTask({
+      projectId: projectDesarrollo.id,
+      membershipId: membership.id,
+      changedByUserId,
+      title: `${trendPrefix} · Estimate Delayed`,
+      description: "Caso controlado con desviacion de estimado pero entrega en fecha.",
+      plannedStartDate: addHours(dueEstimateDelayed, -72),
+      dueDate: dueEstimateDelayed,
+      doneAt: addHours(dueEstimateDelayed, -6),
+      estimatedMinutes: 120,
+      actualMinutes: 210,
+      taskPriorityId: highPriorityId,
+    });
+
+    await ensureCompletedComplianceTask({
+      projectId: projectDesarrollo.id,
+      membershipId: membership.id,
+      changedByUserId,
+      title: `${trendPrefix} · Date Overdue`,
+      description: "Caso controlado de entrega fuera de fecha para alertas operativas.",
+      plannedStartDate: addHours(dueDateOverdue, -60),
+      dueDate: dueDateOverdue,
+      doneAt: addHours(dueDateOverdue, 30),
+      estimatedMinutes: 160,
+      actualMinutes: 110,
+      taskPriorityId: highPriorityId,
+    });
   }
 
   await ensureNotification({
