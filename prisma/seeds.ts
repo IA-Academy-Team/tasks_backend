@@ -680,6 +680,7 @@ async function main() {
 
   for (const seed of expandedUsersSeed) {
     if (seed.role !== "employee") continue;
+    if (seed.email === lauraUser.email || seed.email === sofiaUser.email) continue;
     const user = users.get(seed.email);
     if (!user) continue;
     await ensureAccount(user.id, "credential", String(user.id), "employee123");

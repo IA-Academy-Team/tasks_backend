@@ -127,6 +127,11 @@ export interface AdminDashboardAreaProductivityDto extends DashboardAggregate {
   areaName: string;
 }
 
+export interface AdminDashboardProjectProductivityDto extends DashboardAggregate {
+  projectId: number;
+  projectName: string;
+}
+
 export interface AdminDashboardDto {
   filters: {
     dateFrom: string | null;
@@ -137,7 +142,7 @@ export interface AdminDashboardDto {
   };
   teamSummary: DashboardAggregate;
   employeeProductivity: AdminDashboardEmployeeProductivityDto[];
-  areaProductivity: AdminDashboardAreaProductivityDto[];
+  projectProductivity: AdminDashboardProjectProductivityDto[];
 }
 
 export interface TaskComplianceReportRowDto {
@@ -528,9 +533,9 @@ export const getAdminDashboard = async (query: AdminDashboardQuery): Promise<Adm
     tasks: typeof tasksWithMetrics;
   }>();
 
-  const areaMap = new Map<number, {
-    areaId: number;
-    areaName: string;
+  const projectMap = new Map<number, {
+    projectId: number;
+    projectName: string;
     tasks: typeof tasksWithMetrics;
   }>();
 
@@ -551,14 +556,14 @@ export const getAdminDashboard = async (query: AdminDashboardQuery): Promise<Adm
       }
     }
 
-    const areaId = item.task.project.area.id;
-    const existingArea = areaMap.get(areaId);
-    if (existingArea) {
-      existingArea.tasks.push(item);
+    const projectId = item.task.project.id;
+    const existingProject = projectMap.get(projectId);
+    if (existingProject) {
+      existingProject.tasks.push(item);
     } else {
-      areaMap.set(areaId, {
-        areaId,
-        areaName: item.task.project.area.name,
+      projectMap.set(projectId, {
+        projectId,
+        projectName: item.task.project.name,
         tasks: [item],
       });
     }
@@ -578,16 +583,16 @@ export const getAdminDashboard = async (query: AdminDashboardQuery): Promise<Adm
       || a.employeeName.localeCompare(b.employeeName)
     ));
 
-  const areaProductivity: AdminDashboardAreaProductivityDto[] = Array.from(areaMap.values())
+  const projectProductivity: AdminDashboardProjectProductivityDto[] = Array.from(projectMap.values())
     .map((entry) => ({
-      areaId: entry.areaId,
-      areaName: entry.areaName,
+      projectId: entry.projectId,
+      projectName: entry.projectName,
       ...buildAggregate(entry.tasks),
     }))
     .sort((a, b) => (
       b.completionRate - a.completionRate
       || b.totalTasks - a.totalTasks
-      || a.areaName.localeCompare(b.areaName)
+      || a.projectName.localeCompare(b.projectName)
     ));
 
   return {
@@ -600,7 +605,7 @@ export const getAdminDashboard = async (query: AdminDashboardQuery): Promise<Adm
     },
     teamSummary,
     employeeProductivity,
-    areaProductivity,
+    projectProductivity,
   };
 };
 
