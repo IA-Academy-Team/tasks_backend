@@ -38,6 +38,8 @@ interface TaskRecord {
   plannedStartDate: Date;
   dueDate: Date;
   estimatedMinutes: number | null;
+  reportedActualMinutes: number | null;
+  completionEvidence: string | null;
   deletedAt: Date | null;
   createdByUserId: number;
   createdAt: Date;
@@ -89,6 +91,8 @@ export interface TaskDto {
   plannedStartDate: string;
   dueDate: string;
   estimatedMinutes: number | null;
+  reportedActualMinutes: number | null;
+  completionEvidence: string | null;
   actualMinutes: number;
   deviationMinutes: number | null;
   isEstimateDelayed: boolean | null;
@@ -255,10 +259,11 @@ const computeActualMinutes = (
 const computeTaskMetrics = (task: TaskRecord, now: Date) => {
   const completedAtDate = task.statusTransitions[0]?.changedAt ?? null;
   const completedAt = completedAtDate?.toISOString() ?? null;
-  const { totalMinutes: actualMinutes, hasOpen: hasOpenWorkSession } = computeActualMinutes(
+  const { totalMinutes: computedActualMinutes, hasOpen: hasOpenWorkSession } = computeActualMinutes(
     task.workSessions,
     now,
   );
+  const actualMinutes = task.reportedActualMinutes ?? computedActualMinutes;
   const deviationMinutes = task.estimatedMinutes === null
     ? null
     : actualMinutes - task.estimatedMinutes;
@@ -300,6 +305,8 @@ const mapTask = (task: TaskRecord, now: Date): TaskDto => {
     plannedStartDate: toIsoDate(task.plannedStartDate),
     dueDate: toIsoDate(task.dueDate),
     estimatedMinutes: task.estimatedMinutes ?? null,
+    reportedActualMinutes: task.reportedActualMinutes ?? null,
+    completionEvidence: task.completionEvidence ?? null,
     actualMinutes: metrics.actualMinutes,
     deviationMinutes: metrics.deviationMinutes,
     isEstimateDelayed: metrics.isEstimateDelayed,
@@ -1124,6 +1131,16 @@ export const transitionTaskStatus = async (
   const statusCatalog = await getStatusCatalog();
   const targetStatus = statusCatalog[payload.toStatus];
   const updatedAt = new Date();
+  const completionEvidence = payload.completionEvidence ?? null;
+  const reportedActualMinutes = payload.actualMinutes ?? null;
+
+  if (payload.toStatus === "done" && reportedActualMinutes === null) {
+    throw new AppError(
+      400,
+      "TASK_REPORTED_ACTUAL_MINUTES_REQUIRED",
+      "Task completion requires reported actual minutes",
+    );
+  }
 
   const createdTransition = await prisma.$transaction(async (tx) => {
     if (!isStandaloneTask && payload.toStatus === "in_progress") {
@@ -1180,12 +1197,18 @@ export const transitionTaskStatus = async (
       });
     }
 
+    const taskUpdateData: Prisma.TaskUncheckedUpdateInput = {
+      taskStatusId: targetStatus.id,
+      updatedAt,
+    };
+    if (payload.toStatus === "done") {
+      taskUpdateData.reportedActualMinutes = reportedActualMinutes;
+      taskUpdateData.completionEvidence = completionEvidence;
+    }
+
     await tx.task.update({
       where: { id: taskId },
-      data: {
-        taskStatusId: targetStatus.id,
-        updatedAt,
-      },
+      data: taskUpdateData,
     });
 
     return tx.taskStatusTransition.create({

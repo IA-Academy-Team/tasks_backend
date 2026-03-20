@@ -33,6 +33,8 @@ interface AnalyticsTaskRecord {
   plannedStartDate: Date;
   dueDate: Date;
   estimatedMinutes: number | null;
+  reportedActualMinutes: number | null;
+  completionEvidence: string | null;
   createdAt: Date;
   updatedAt: Date;
   status: {
@@ -261,6 +263,14 @@ const computeActualMinutes = (
   return { actualMinutes: Math.max(0, Math.round(totalMs / 60000)) };
 };
 
+const resolveTaskActualMinutes = (task: AnalyticsTaskRecord, now: Date): number => {
+  if (task.reportedActualMinutes !== null) {
+    return task.reportedActualMinutes;
+  }
+
+  return computeActualMinutes(task.workSessions, now).actualMinutes;
+};
+
 const getTaskCompletedAtDate = (task: AnalyticsTaskRecord): Date | null =>
   task.statusTransitions[0]?.changedAt ?? null;
 
@@ -270,7 +280,7 @@ const computeTaskComplianceMetrics = (
 ): TaskComplianceMetrics => {
   const completedAtDate = getTaskCompletedAtDate(task);
   const completedAt = completedAtDate?.toISOString() ?? null;
-  const actualMinutes = computeActualMinutes(task.workSessions, now).actualMinutes;
+  const actualMinutes = resolveTaskActualMinutes(task, now);
   const deviationMinutes = task.estimatedMinutes === null
     ? null
     : actualMinutes - task.estimatedMinutes;
@@ -463,7 +473,7 @@ export const getEmployeeDashboard = async (authUserId: number): Promise<Employee
 
   const computedTasks = typedTasks.map((task) => ({
     task,
-    metrics: computeActualMinutes(task.workSessions, now),
+    metrics: { actualMinutes: resolveTaskActualMinutes(task, now) },
   }));
 
   const assignedTasks = computedTasks.filter((item) => item.task.status.name === TASK_STATUS_NAMES.assigned);
@@ -520,7 +530,7 @@ export const getAdminDashboard = async (query: AdminDashboardQuery): Promise<Adm
     task,
     statusName: task.status.name,
     estimatedMinutes: task.estimatedMinutes,
-    actualMinutes: computeActualMinutes(task.workSessions, now).actualMinutes,
+    actualMinutes: resolveTaskActualMinutes(task, now),
   }));
 
   const teamSummary = buildAggregate(tasksWithMetrics);
