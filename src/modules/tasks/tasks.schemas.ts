@@ -49,6 +49,7 @@ export const tasksListQuerySchema = z.object({
   projectId: z.coerce.number().int().positive().optional(),
   status: z.enum(["all", "assigned", "in_progress", "done"]).optional().default("all"),
   includeDeleted: queryBoolean.optional().default(false),
+  includeStandalone: queryBoolean.optional().default(false),
 });
 
 export const standaloneTasksListQuerySchema = z.object({
@@ -105,11 +106,25 @@ export const updateTaskSchema = z.object({
 
 export const transitionTaskStatusSchema = z.object({
   toStatus: z.enum(["assigned", "in_progress", "done"]),
+  actualMinutes: nullablePositiveInt.optional(),
+  completionEvidence: nullableTrimmedString
+    .refine((value) => value === null || value.length <= 5000, {
+      message: "completionEvidence must contain at most 5000 characters",
+    })
+    .optional(),
   notes: nullableTrimmedString
     .refine((value) => value === null || value.length <= 1000, {
       message: "notes must contain at most 1000 characters",
     })
     .optional(),
+}).superRefine((payload, context) => {
+  if (payload.toStatus === "done" && (payload.actualMinutes === undefined || payload.actualMinutes === null)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["actualMinutes"],
+      message: "actualMinutes is required when transitioning task to done",
+    });
+  }
 });
 
 export type TasksListQuery = z.infer<typeof tasksListQuerySchema>;

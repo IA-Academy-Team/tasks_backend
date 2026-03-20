@@ -283,6 +283,8 @@ model Task {
   plannedStartDate     DateTime  @map("planned_start_date") @db.Date
   dueDate              DateTime  @map("due_date") @db.Date
   estimatedMinutes     Int?      @map("estimated_minutes")
+  reportedActualMinutes Int?     @map("reported_actual_minutes")
+  completionEvidence   String?   @map("completion_evidence") @db.Text
   deletedAt            DateTime? @map("deleted_at") @db.Timestamptz(6)
   createdByUserId      Int       @map("created_by_user_id")
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)

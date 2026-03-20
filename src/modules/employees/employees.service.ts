@@ -402,9 +402,37 @@ export const updateEmployee = async (
     data.emailVerified = payload.emailVerified;
   }
 
-  await prisma.user.update({
-    where: { id: employee.userId },
-    data,
+  await prisma.$transaction(async (tx) => {
+    if (Object.keys(data).length > 0) {
+      await tx.user.update({
+        where: { id: employee.userId },
+        data,
+      });
+    }
+
+    if (payload.password !== undefined) {
+      const hashedPassword = await bcrypt.hash(payload.password, 10);
+
+      await tx.account.upsert({
+        where: {
+          providerId_providerAccountId: {
+            providerId: "credential",
+            providerAccountId: String(employee.userId),
+          },
+        },
+        update: {
+          password: hashedPassword,
+          scope: "app",
+        },
+        create: {
+          userId: employee.userId,
+          providerId: "credential",
+          providerAccountId: String(employee.userId),
+          scope: "app",
+          password: hashedPassword,
+        },
+      });
+    }
   });
 
   return getEmployeeById(employeeId);
