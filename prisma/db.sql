@@ -272,6 +272,8 @@ CREATE TABLE tasks (
     planned_start_date DATE NOT NULL,
     due_date DATE NOT NULL,
     estimated_minutes INTEGER, 
+    reported_actual_minutes INTEGER,
+    completion_evidence TEXT,
     deleted_at TIMESTAMPTZ,
     created_by_user_id INT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -299,6 +301,9 @@ CREATE TABLE tasks (
     ),
     CONSTRAINT chk_tasks_estimated_minutes CHECK (
         estimated_minutes IS NULL OR estimated_minutes > 0
+    ),
+    CONSTRAINT chk_tasks_reported_actual_minutes CHECK (
+        reported_actual_minutes IS NULL OR reported_actual_minutes > 0
     )
 );
 
