@@ -25,7 +25,7 @@ const PROJECT_STATUS_NAMES = {
 
 interface ProjectSummaryRecord {
   id: number;
-  areaId: number;
+  areaId: number | null;
   projectStatusId: number;
   name: string;
   description: string | null;
@@ -34,7 +34,7 @@ interface ProjectSummaryRecord {
   closedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
-  area: { id: number; name: string };
+  area: { id: number; name: string } | null;
   status: { id: number; name: string };
   _count: { memberships: number; tasks: number };
 }
@@ -67,7 +67,7 @@ interface ProjectMembershipRecord {
 
 export interface ProjectDto {
   id: number;
-  areaId: number;
+  areaId: number | null;
   areaName: string;
   projectStatusId: number;
   status: string;
@@ -121,7 +121,7 @@ const toIsoDateTime = (value: Date | null): string | null => (
 const mapProject = (project: ProjectSummaryRecord): ProjectDto => ({
   id: project.id,
   areaId: project.areaId,
-  areaName: project.area.name,
+  areaName: project.area?.name ?? "Sin area",
   projectStatusId: project.projectStatusId,
   status: project.status.name,
   name: project.name,
@@ -226,7 +226,7 @@ const getProjectSummaryOrThrow = async (projectId: number): Promise<ProjectSumma
   return project as unknown as ProjectSummaryRecord;
 };
 
-const ensureEmployeeEligibleForProject = async (employeeId: number, projectAreaId: number) => {
+const ensureEmployeeEligibleForProject = async (employeeId: number, projectAreaId: number | null) => {
   const employee = await prisma.employee.findUnique({
     where: { id: employeeId },
     include: {
@@ -253,6 +253,10 @@ const ensureEmployeeEligibleForProject = async (employeeId: number, projectAreaI
 
   if (!employee.user.isActive) {
     throw new AppError(409, "EMPLOYEE_INACTIVE", "Employee is inactive");
+  }
+
+  if (projectAreaId === null) {
+    return;
   }
 
   const currentAreaAssignment = employee.areaAssignments[0];
@@ -423,18 +427,21 @@ export const getProjectById = async (
 };
 
 export const createProject = async (payload: CreateProjectInput): Promise<ProjectDto> => {
-  await ensureAreaActive(payload.areaId);
-  validateDateRange(payload.startDate ?? null, payload.endDate ?? null);
+  if (payload.areaId !== undefined && payload.areaId !== null) {
+    await ensureAreaActive(payload.areaId);
+  }
+  const resolvedStartDate = payload.startDate ?? new Date();
+  validateDateRange(resolvedStartDate, payload.endDate ?? null);
 
   const statusIds = await resolveProjectStatusIds();
 
   const project = await prisma.project.create({
     data: {
-      areaId: payload.areaId,
+      areaId: payload.areaId ?? null,
       projectStatusId: statusIds.active,
       name: payload.name,
       description: payload.description ?? null,
-      startDate: payload.startDate ?? null,
+      startDate: resolvedStartDate,
       endDate: payload.endDate ?? null,
     },
     select: { id: true },
@@ -459,7 +466,7 @@ export const updateProject = async (
 ): Promise<ProjectDto> => {
   const existingProject = await getProjectSummaryOrThrow(projectId);
 
-  if (payload.areaId !== undefined) {
+  if (payload.areaId !== undefined && payload.areaId !== null) {
     await ensureAreaActive(payload.areaId);
   }
 
@@ -473,7 +480,7 @@ export const updateProject = async (
   validateDateRange(nextStartDate, nextEndDate);
 
   const data: {
-    areaId?: number;
+    areaId?: number | null;
     name?: string;
     description?: string | null;
     startDate?: Date | null;

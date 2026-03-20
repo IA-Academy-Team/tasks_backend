@@ -74,6 +74,7 @@ const buildAreaMetricsMap = async (areaIds: number[]): Promise<Map<number, AreaM
   }
 
   for (const count of activeProjectCounts) {
+    if (count.areaId === null) continue;
     const current = metrics.get(count.areaId);
     if (!current) continue;
     current.activeProjectCount = count._count._all;

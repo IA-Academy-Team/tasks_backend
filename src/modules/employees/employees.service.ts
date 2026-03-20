@@ -80,7 +80,7 @@ export interface EmployeeProjectMembershipDto {
   projectId: number;
   projectName: string;
   projectStatus: string;
-  projectAreaId: number;
+  projectAreaId: number | null;
   projectAreaName: string;
   assignedByUserId: number;
   endedByUserId: number | null;
@@ -256,7 +256,7 @@ const mapProjectMembership = (membership: {
     id: number;
     name: string;
     status: { id: number; name: string };
-    area: { id: number; name: string };
+    area: { id: number; name: string } | null;
   };
 }): EmployeeProjectMembershipDto => ({
   id: membership.id,
@@ -264,8 +264,8 @@ const mapProjectMembership = (membership: {
   projectId: membership.projectId,
   projectName: membership.project.name,
   projectStatus: membership.project.status.name,
-  projectAreaId: membership.project.area.id,
-  projectAreaName: membership.project.area.name,
+  projectAreaId: membership.project.area?.id ?? null,
+  projectAreaName: membership.project.area?.name ?? "Sin area",
   assignedByUserId: membership.assignedByUserId,
   endedByUserId: membership.endedByUserId,
   assignedAt: membership.assignedAt.toISOString(),

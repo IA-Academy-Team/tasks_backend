@@ -6,8 +6,13 @@ const nullableTrimmedString = z.preprocess(
 );
 
 const nullableDateInput = z.preprocess(
+  (value) => (value === "" || value === null ? null : value),
+  z.nullable(z.coerce.date()),
+);
+
+const nullablePositiveInt = z.preprocess(
   (value) => (value === "" ? null : value),
-  z.union([z.coerce.date(), z.null()]),
+  z.union([z.coerce.number().int().positive(), z.null()]),
 );
 
 export const projectsListQuerySchema = z.object({
@@ -25,7 +30,7 @@ export const projectMembershipIdParamsSchema = z.object({
 });
 
 export const createProjectSchema = z.object({
-  areaId: z.coerce.number().int().positive(),
+  areaId: nullablePositiveInt.optional(),
   name: z.string().trim().min(2).max(160),
   description: nullableTrimmedString
     .refine((value) => value === null || value.length <= 5000, {
@@ -44,7 +49,7 @@ export const createProjectSchema = z.object({
 });
 
 export const updateProjectSchema = z.object({
-  areaId: z.coerce.number().int().positive().optional(),
+  areaId: nullablePositiveInt.optional(),
   name: z.string().trim().min(2).max(160).optional(),
   description: nullableTrimmedString
     .refine((value) => value === null || value.length <= 5000, {
