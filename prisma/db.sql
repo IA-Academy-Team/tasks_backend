@@ -474,8 +474,7 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO project_statuses (id, name)
 VALUES
     (1, 'Activo'),
-    (2, 'Cerrado'),
-    (3, 'Cancelado')
+    (2, 'Cerrado')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO task_statuses (id, name)

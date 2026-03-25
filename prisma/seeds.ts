@@ -15,7 +15,6 @@ const employeeStatuses = [
 const projectStatuses = [
   { id: 1, name: "Activo" },
   { id: 2, name: "Cerrado" },
-  { id: 3, name: "Cancelado" },
 ];
 
 const taskStatuses = [
@@ -828,7 +827,6 @@ async function main() {
 
   const activeProjectStatusId = await getProjectStatusIdByName("Activo");
   const closedProjectStatusId = await getProjectStatusIdByName("Cerrado");
-  const cancelledProjectStatusId = await getProjectStatusIdByName("Cancelado");
 
   const taskAssignedStatusId = await getTaskStatusIdByName("Asignada");
   const taskInProgressStatusId = await getTaskStatusIdByName("En proceso");
@@ -932,11 +930,11 @@ async function main() {
     closedAt: daysAgo(25),
   });
 
-  const projectCancelado = await ensureProject({
+  const projectLegacy = await ensureProject({
     areaId: operacionesArea.id,
-    projectStatusId: cancelledProjectStatusId,
+    projectStatusId: closedProjectStatusId,
     name: "Migracion Legacy",
-    description: "Iniciativa detenida para migrar operaciones historicas.",
+    description: "Iniciativa desactivada para migrar operaciones historicas.",
     startDate: daysAgo(130),
     endDate: daysAgo(80),
     closedAt: daysAgo(80),
@@ -959,9 +957,7 @@ async function main() {
       const statusSelector = projectOrder % 9;
       const projectStatusId = statusSelector <= 5
         ? activeProjectStatusId
-        : statusSelector <= 7
-          ? closedProjectStatusId
-          : cancelledProjectStatusId;
+        : closedProjectStatusId;
 
       const isClosed = projectStatusId !== activeProjectStatusId;
       const endDate = isClosed ? daysAgo(20 + projectOrder) : null;
@@ -1019,8 +1015,8 @@ async function main() {
     endedByUserId: adminUser.id,
   });
 
-  const lauraCancelledMembership = await ensureProjectMembership({
-    projectId: projectCancelado.id,
+  await ensureProjectMembership({
+    projectId: projectLegacy.id,
     employeeId: lauraEmployee.id,
     assignedByUserId: adminUser.id,
     assignedAt: daysAgo(125),
@@ -1128,12 +1124,12 @@ async function main() {
   });
 
   const taskLegacyDocs = await ensureTask({
-    projectId: projectCancelado.id,
+    projectId: projectLegacy.id,
     assigneeMembershipId: null,
     taskStatusId: taskAssignedStatusId,
     taskPriorityId: lowPriorityId,
     title: "Documentar alcance pendiente",
-    description: "Consolidar documentacion residual del proyecto cancelado.",
+    description: "Consolidar documentacion residual del proyecto desactivado.",
     plannedStartDate: daysAgo(110),
     dueDate: daysAgo(85),
     estimatedMinutes: 120,
