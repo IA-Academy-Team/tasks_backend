@@ -14,7 +14,6 @@ import {
   employeesListQuerySchema,
   unassignEmployeeAreaSchema,
   updateEmployeeSchema,
-  updateEmployeeStatusSchema,
 } from "./employees.schemas.js";
 import {
   createEmployee,
@@ -26,7 +25,6 @@ import {
   assignEmployeeToArea,
   unassignEmployeeFromArea,
   updateEmployee,
-  updateEmployeeStatus,
 } from "./employees.service.js";
 
 export const employeesRouter = Router();
@@ -91,25 +89,6 @@ employeesRouter.patch("/:employeeId", async (req, res, next) => {
   } catch (error) {
     if (error instanceof z.ZodError) {
       next(new AppError(400, "VALIDATION_ERROR", "Invalid employee payload", error.flatten()));
-      return;
-    }
-
-    next(error);
-  }
-});
-
-employeesRouter.patch("/:employeeId/status", async (req, res, next) => {
-  try {
-    const { employeeId } = employeeIdParamsSchema.parse(req.params);
-    const payload = updateEmployeeStatusSchema.parse(req.body);
-    const authenticatedRequest = req as unknown as AuthenticatedRequest;
-    const actorUserId = authenticatedRequest.auth.user.id;
-    const employee = await updateEmployeeStatus(employeeId, payload.isActive, actorUserId);
-
-    res.status(200).json({ data: employee });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      next(new AppError(400, "VALIDATION_ERROR", "Invalid employee status payload", error.flatten()));
       return;
     }
 

@@ -16,7 +16,7 @@ const nullablePositiveInt = z.preprocess(
 );
 
 export const projectsListQuerySchema = z.object({
-  status: z.enum(["all", "active", "closed", "cancelled"]).optional().default("all"),
+  status: z.enum(["all", "active", "closed"]).optional().default("all"),
   areaId: z.coerce.number().int().positive().optional(),
 });
 
@@ -63,7 +63,7 @@ export const updateProjectSchema = z.object({
 });
 
 export const updateProjectStatusSchema = z.object({
-  status: z.enum(["active", "closed", "cancelled"]),
+  status: z.enum(["active", "closed"]),
   endDate: nullableDateInput.optional(),
 });
 

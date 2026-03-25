@@ -32,7 +32,6 @@ export const createEmployeeSchema = z.object({
     .optional(),
   image: imageUrlSchema.optional(),
   emailVerified: z.boolean().optional().default(false),
-  isActive: z.boolean().optional().default(true),
 });
 
 export const updateEmployeeSchema = z.object({
@@ -47,10 +46,6 @@ export const updateEmployeeSchema = z.object({
   emailVerified: z.boolean().optional(),
 }).refine((payload) => Object.keys(payload).length > 0, {
   message: "At least one editable field is required",
-});
-
-export const updateEmployeeStatusSchema = z.object({
-  isActive: z.boolean(),
 });
 
 export const employeeAssignmentsListQuerySchema = z.object({
@@ -68,7 +63,6 @@ export const unassignEmployeeAreaSchema = z.object({
 export type EmployeesListQuery = z.infer<typeof employeesListQuerySchema>;
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
 export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;
-export type UpdateEmployeeStatusInput = z.infer<typeof updateEmployeeStatusSchema>;
 export type EmployeeAssignmentsListQuery = z.infer<typeof employeeAssignmentsListQuerySchema>;
 export type AssignEmployeeAreaInput = z.infer<typeof assignEmployeeAreaSchema>;
 export type UnassignEmployeeAreaInput = z.infer<typeof unassignEmployeeAreaSchema>;

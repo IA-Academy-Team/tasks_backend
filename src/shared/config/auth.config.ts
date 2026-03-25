@@ -1,5 +1,4 @@
 import { betterAuth } from "better-auth";
-import { APIError } from "better-auth/api";
 import { bearer } from "better-auth/plugins";
 import bcrypt from "bcrypt";
 import { prismaAdapter } from "@better-auth/prisma-adapter";
@@ -11,12 +10,6 @@ import {
   FRONTEND_ORIGINS,
   NODE_ENV,
 } from "./env.config.js";
-const INACTIVE_USER_ERROR_CODE = "USER_INACTIVE";
-
-const toNumericId = (value: string | number) => {
-  if (typeof value === "number") return value;
-  return Number(value);
-};
 
 export const auth = betterAuth({
   appName: "taskapp",
@@ -155,34 +148,8 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
-        async before(user, ctx) {
+        async before(user) {
           return { data: user };
-        },
-      },
-    },
-    session: {
-      create: {
-        async before(session, ctx) {
-          if (!ctx) return;
-          const userId = toNumericId(session.userId);
-          const user = Number.isFinite(userId)
-            ? await prisma.user.findUnique({
-                where: { id: userId },
-                select: {
-                  email: true,
-                  isActive: true,
-                },
-              })
-            : null;
-
-          if (!user) return;
-
-          if (user.isActive === false) {
-            throw new APIError("FORBIDDEN", {
-              message: INACTIVE_USER_ERROR_CODE,
-              code: INACTIVE_USER_ERROR_CODE,
-            });
-          }
         },
       },
     },

@@ -20,7 +20,6 @@ type ProjectAccessActor = {
 const PROJECT_STATUS_NAMES = {
   active: "Activo",
   closed: "Cerrado",
-  cancelled: "Cancelado",
 } as const;
 
 interface ProjectSummaryRecord {
@@ -164,7 +163,6 @@ const resolveProjectStatusIds = async () => {
         in: [
           PROJECT_STATUS_NAMES.active,
           PROJECT_STATUS_NAMES.closed,
-          PROJECT_STATUS_NAMES.cancelled,
         ],
       },
     },
@@ -176,9 +174,8 @@ const resolveProjectStatusIds = async () => {
 
   const active = statuses.find((status) => status.name === PROJECT_STATUS_NAMES.active)?.id;
   const closed = statuses.find((status) => status.name === PROJECT_STATUS_NAMES.closed)?.id;
-  const cancelled = statuses.find((status) => status.name === PROJECT_STATUS_NAMES.cancelled)?.id;
 
-  if (!active || !closed || !cancelled) {
+  if (!active || !closed) {
     throw new AppError(
       500,
       "PROJECT_STATUSES_NOT_CONFIGURED",
@@ -186,7 +183,7 @@ const resolveProjectStatusIds = async () => {
     );
   }
 
-  return { active, closed, cancelled };
+  return { active, closed };
 };
 
 const ensureAreaActive = async (areaId: number) => {
@@ -543,9 +540,6 @@ export const updateProjectStatus = async (
   if (payload.status === "closed") {
     nextStatusId = statusIds.closed;
   }
-  if (payload.status === "cancelled") {
-    nextStatusId = statusIds.cancelled;
-  }
 
   const data: {
     projectStatusId: number;
@@ -571,54 +565,25 @@ export const updateProjectStatus = async (
   return getProjectById(projectId);
 };
 
-export const deleteProject = async (projectId: number): Promise<DeleteProjectResult> => {
+export const deleteProject = async (
+  projectId: number,
+): Promise<DeleteProjectResult> => {
   await getProjectSummaryOrThrow(projectId);
-  const statusIds = await resolveProjectStatusIds();
-
-  const [activeMembershipCount, activeTaskCount, totalMembershipCount, totalTaskCount] = await Promise.all([
-    prisma.projectMembership.count({
-      where: { projectId, unassignedAt: null },
-    }),
-    prisma.task.count({
-      where: { projectId, deletedAt: null },
-    }),
-    prisma.projectMembership.count({
+  await prisma.$transaction(async (tx) => {
+    await tx.task.deleteMany({
       where: { projectId },
-    }),
-    prisma.task.count({
-      where: { projectId },
-    }),
-  ]);
-
-  if (activeMembershipCount > 0 || activeTaskCount > 0) {
-    throw new AppError(
-      409,
-      "PROJECT_HAS_ACTIVE_DEPENDENCIES",
-      "Project has active memberships or tasks",
-      {
-        activeMembershipCount,
-        activeTaskCount,
-      },
-    );
-  }
-
-  if (totalMembershipCount === 0 && totalTaskCount === 0) {
-    await prisma.project.delete({
-      where: { id: projectId },
     });
 
-    return { id: projectId, mode: "deleted" };
-  }
+    await tx.projectMembership.deleteMany({
+      where: { projectId },
+    });
 
-  await prisma.project.update({
-    where: { id: projectId },
-    data: {
-      projectStatusId: statusIds.cancelled,
-      closedAt: new Date(),
-    },
+    await tx.project.delete({
+      where: { id: projectId },
+    });
   });
 
-  return { id: projectId, mode: "archived" };
+  return { id: projectId, mode: "deleted" };
 };
 
 export const listProjectMemberships = async (

@@ -470,8 +470,7 @@
             "type": "string",
             "enum": [
               "active",
-              "closed",
-              "cancelled"
+              "closed"
             ]
           },
           "endDate": {
@@ -1639,8 +1638,7 @@
               "enum": [
                 "all",
                 "active",
-                "closed",
-                "cancelled"
+                "closed"
               ]
             }
           },

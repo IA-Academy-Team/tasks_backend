@@ -13,8 +13,6 @@ import type {
 interface EmployeeWithRelations {
   id: number;
   userId: number;
-  employeeStatusId: number;
-  deactivatedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   user: {
@@ -22,12 +20,10 @@ interface EmployeeWithRelations {
     name: string;
     email: string;
     roleId: number;
-    isActive: boolean;
     emailVerified: boolean;
     phoneNumber: string | null;
     image: string | null;
   };
-  status: { id: number; name: string };
   areaAssignments: Array<{
     areaId: number;
     assignedAt: Date;
@@ -43,13 +39,9 @@ export interface EmployeeDto {
   email: string;
   role: AuthRole;
   roleId: number;
-  isActive: boolean;
   emailVerified: boolean;
   phoneNumber: string | null;
   image: string | null;
-  employeeStatusId: number;
-  employeeStatus: string;
-  deactivatedAt: string | null;
   currentAreaId: number | null;
   currentAreaName: string | null;
   areaIds: number[];
@@ -93,7 +85,7 @@ export interface EmployeeProjectMembershipDto {
 
 export interface DeleteEmployeeResult {
   id: number;
-  mode: "deleted" | "archived";
+  mode: "deleted";
 }
 
 const normalizeRoleName = (roleId: number): AuthRole =>
@@ -128,13 +120,9 @@ const mapEmployee = (employee: EmployeeWithRelations): EmployeeDto => {
     email: employee.user.email,
     role: normalizeRoleName(employee.user.roleId),
     roleId: employee.user.roleId,
-    isActive: employee.user.isActive,
     emailVerified: employee.user.emailVerified,
     phoneNumber: employee.user.phoneNumber ?? null,
     image: employee.user.image ?? null,
-    employeeStatusId: employee.employeeStatusId,
-    employeeStatus: employee.status.name,
-    deactivatedAt: employee.deactivatedAt?.toISOString() ?? null,
     currentAreaId: currentAreaAssignment?.area.id ?? null,
     currentAreaName: currentAreaAssignment?.area.name ?? null,
     areaIds: [...areaById.keys()],
@@ -159,28 +147,6 @@ const getEmployeeRoleId = async (): Promise<number> => {
   return role.id;
 };
 
-const getEmployeeStatusIds = async (): Promise<{ active: number; inactive: number }> => {
-  const statuses = await prisma.employeeStatus.findMany({
-    where: {
-      name: { in: ["Activo", "Inactivo"] },
-    },
-    select: { id: true, name: true },
-  });
-
-  const active = statuses.find((status) => status.name === "Activo")?.id;
-  const inactive = statuses.find((status) => status.name === "Inactivo")?.id;
-
-  if (!active || !inactive) {
-    throw new AppError(
-      500,
-      "EMPLOYEE_STATUSES_NOT_CONFIGURED",
-      "Employee status catalog is missing required values",
-    );
-  }
-
-  return { active, inactive };
-};
-
 const getEmployeeOrThrow = async (employeeId: number): Promise<EmployeeWithRelations> => {
   const employee = await prisma.employee.findUnique({
     where: { id: employeeId },
@@ -191,13 +157,11 @@ const getEmployeeOrThrow = async (employeeId: number): Promise<EmployeeWithRelat
           name: true,
           email: true,
           roleId: true,
-          isActive: true,
           emailVerified: true,
           phoneNumber: true,
           image: true,
         },
       },
-      status: { select: { id: true, name: true } },
       areaAssignments: {
         orderBy: { assignedAt: "desc" },
         select: {
@@ -275,18 +239,9 @@ const mapProjectMembership = (membership: {
   updatedAt: membership.updatedAt.toISOString(),
 });
 
-export const listEmployees = async (query: EmployeesListQuery): Promise<EmployeeDto[]> => {
-  const where = query.status === "all"
-    ? {}
-    : {
-        user: {
-          isActive: query.status === "active",
-        },
-      };
-
+export const listEmployees = async (_query: EmployeesListQuery): Promise<EmployeeDto[]> => {
   const employees = await prisma.employee.findMany({
-    where,
-    orderBy: [{ user: { isActive: "desc" } }, { user: { name: "asc" } }],
+    orderBy: [{ user: { name: "asc" } }],
     include: {
       user: {
         select: {
@@ -294,13 +249,11 @@ export const listEmployees = async (query: EmployeesListQuery): Promise<Employee
           name: true,
           email: true,
           roleId: true,
-          isActive: true,
           emailVerified: true,
           phoneNumber: true,
           image: true,
         },
       },
-      status: { select: { id: true, name: true } },
       areaAssignments: {
         orderBy: { assignedAt: "desc" },
         select: {
@@ -322,10 +275,7 @@ export const getEmployeeById = async (employeeId: number): Promise<EmployeeDto> 
 };
 
 export const createEmployee = async (payload: CreateEmployeeInput): Promise<EmployeeDto> => {
-  const [employeeRoleId, statusIds] = await Promise.all([
-    getEmployeeRoleId(),
-    getEmployeeStatusIds(),
-  ]);
+  const employeeRoleId = await getEmployeeRoleId();
 
   const { employeeId } = await prisma.$transaction(async (tx) => {
     const hashedPassword = await bcrypt.hash(payload.password, 10);
@@ -335,7 +285,7 @@ export const createEmployee = async (payload: CreateEmployeeInput): Promise<Empl
         name: payload.name,
         email: payload.email,
         roleId: employeeRoleId,
-        isActive: payload.isActive ?? true,
+        isActive: true,
         emailVerified: payload.emailVerified ?? false,
         phoneNumber: payload.phoneNumber ?? null,
         image: payload.image ?? null,
@@ -361,8 +311,6 @@ export const createEmployee = async (payload: CreateEmployeeInput): Promise<Empl
     const createdEmployee = await tx.employee.create({
       data: {
         userId: createdUser.id,
-        employeeStatusId: (payload.isActive ?? true) ? statusIds.active : statusIds.inactive,
-        deactivatedAt: (payload.isActive ?? true) ? null : new Date(),
       },
       select: { id: true },
     });
@@ -438,40 +386,6 @@ export const updateEmployee = async (
   return getEmployeeById(employeeId);
 };
 
-export const updateEmployeeStatus = async (
-  employeeId: number,
-  isActive: boolean,
-  actorUserId: number,
-): Promise<EmployeeDto> => {
-  const employee = await getEmployeeOrThrow(employeeId);
-
-  if (!isActive && employee.userId === actorUserId) {
-    throw new AppError(
-      409,
-      "SELF_DEACTIVATION_NOT_ALLOWED",
-      "You cannot deactivate your own account",
-    );
-  }
-
-  const statusIds = await getEmployeeStatusIds();
-
-  await prisma.$transaction([
-    prisma.user.update({
-      where: { id: employee.userId },
-      data: { isActive },
-    }),
-    prisma.employee.update({
-      where: { id: employeeId },
-      data: {
-        employeeStatusId: isActive ? statusIds.active : statusIds.inactive,
-        deactivatedAt: isActive ? null : new Date(),
-      },
-    }),
-  ]);
-
-  return getEmployeeById(employeeId);
-};
-
 export const deleteEmployee = async (
   employeeId: number,
   actorUserId: number,
@@ -522,41 +436,30 @@ export const deleteEmployee = async (
     }),
   ]);
 
-  if (totalAreaAssignmentCount === 0 && totalProjectMembershipCount === 0) {
-    await prisma.$transaction([
-      prisma.employee.delete({
-        where: { id: employeeId },
-      }),
-      prisma.user.delete({
-        where: { id: employee.userId },
-      }),
-    ]);
-
-    return {
-      id: employeeId,
-      mode: "deleted",
-    };
+  if (totalAreaAssignmentCount > 0 || totalProjectMembershipCount > 0) {
+    throw new AppError(
+      409,
+      "EMPLOYEE_HAS_HISTORICAL_DEPENDENCIES",
+      "Employee has historical area assignments or project memberships and cannot be deleted",
+      {
+        totalAreaAssignmentCount,
+        totalProjectMembershipCount,
+      },
+    );
   }
 
-  const statusIds = await getEmployeeStatusIds();
-
   await prisma.$transaction([
-    prisma.user.update({
-      where: { id: employee.userId },
-      data: { isActive: false },
-    }),
-    prisma.employee.update({
+    prisma.employee.delete({
       where: { id: employeeId },
-      data: {
-        employeeStatusId: statusIds.inactive,
-        deactivatedAt: new Date(),
-      },
+    }),
+    prisma.user.delete({
+      where: { id: employee.userId },
     }),
   ]);
 
   return {
     id: employeeId,
-    mode: "archived",
+    mode: "deleted",
   };
 };
 
@@ -601,10 +504,6 @@ export const assignEmployeeToArea = async (
   actorUserId: number,
 ): Promise<EmployeeAreaAssignmentDto> => {
   const employee = await getEmployeeOrThrow(employeeId);
-
-  if (!employee.user.isActive) {
-    throw new AppError(409, "EMPLOYEE_INACTIVE", "Employee is inactive");
-  }
 
   const area = await prisma.area.findUnique({
     where: { id: areaId },
