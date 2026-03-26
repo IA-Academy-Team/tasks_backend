@@ -11,6 +11,7 @@ import {
 } from "./middlewares/rate-limit.middleware.js";
 import { securityHeadersMiddleware } from "./middlewares/security-headers.middleware.js";
 import { NODE_ENV } from "../shared/config/env.config.js";
+import { healthRouter } from "./routes/health.router.js";
 
 morgan.token("requestId", (_req, res) => (
   (res as unknown as { locals?: { requestId?: string } }).locals?.requestId ?? "-"
@@ -32,6 +33,7 @@ export const createApp = () => {
   app.use(express.urlencoded({ extended: true }));
 
   app.use("/api", apiV1Router);
+  app.use("/health", healthRouter);
 
   app.use(notFoundMiddleware);
   app.use(errorHandlerMiddleware);
