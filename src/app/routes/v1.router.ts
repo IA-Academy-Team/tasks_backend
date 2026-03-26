@@ -8,7 +8,6 @@ import { projectsRouter } from "../../modules/projects/projects.router.js";
 import { tasksRouter } from "../../modules/tasks/tasks.router.js";
 import { usersRouter } from "../../modules/users/users.router.js";
 import { docsRouter } from "./docs.router.js";
-import { healthRouter } from "./health.router.js";
 
 export const apiV1Router = Router();
 

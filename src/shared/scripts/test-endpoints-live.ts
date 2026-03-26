@@ -170,7 +170,7 @@ export const runLiveEndpointsScenario = async () => {
 
   try {
     await step("health endpoint", async () => {
-      const payload = asRecord(await fetchJson(baseUrl, "/api/health"));
+      const payload = asRecord(await fetchJson(baseUrl, "/health"));
       assertCondition(payload.status === "ok", "Health status must be ok");
     });
 

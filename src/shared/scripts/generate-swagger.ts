@@ -268,6 +268,10 @@ const openApiDocument = {
       get: {
         tags: ["System"],
         summary: "Health check",
+        servers: [
+          { url: `${BACKEND_URL}`, description: "Servidor actual (sin prefijo /api)" },
+          { url: "http://localhost:3004", description: "Desarrollo local (sin prefijo /api)" },
+        ],
         responses: {
           200: {
             description: "Servicio disponible",

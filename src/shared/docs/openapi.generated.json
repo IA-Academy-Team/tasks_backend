@@ -621,6 +621,16 @@
           "System"
         ],
         "summary": "Health check",
+        "servers": [
+          {
+            "url": "http://localhost:3004",
+            "description": "Servidor actual (sin prefijo /api)"
+          },
+          {
+            "url": "http://localhost:3004",
+            "description": "Desarrollo local (sin prefijo /api)"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Servicio disponible",
