@@ -625,6 +625,7 @@ const ensureTaskTransitionAccess = async (taskId: number, actor: TransitionTaskA
       createdByUserId: true,
       assigneeMembershipId: true,
       assigneeEmployeeId: true,
+      estimatedMinutes: true,
       taskStatusId: true,
       deletedAt: true,
       status: {
@@ -1152,22 +1153,16 @@ export const transitionTaskStatus = async (
         select: { id: true },
       });
 
-      if (openSession) {
-        throw new AppError(
-          409,
-          "TASK_WORK_SESSION_ALREADY_OPEN",
-          "Task already has an open work session",
-        );
+      if (!openSession) {
+        await tx.taskWorkSession.create({
+          data: {
+            taskId,
+            projectMembershipId: task.assigneeMembershipId!,
+            startedByUserId: actor.userId,
+            startedAt: updatedAt,
+          },
+        });
       }
-
-      await tx.taskWorkSession.create({
-        data: {
-          taskId,
-          projectMembershipId: task.assigneeMembershipId!,
-          startedByUserId: actor.userId,
-          startedAt: updatedAt,
-        },
-      });
     }
 
     if (!isStandaloneTask && payload.toStatus === "done") {
@@ -1180,21 +1175,34 @@ export const transitionTaskStatus = async (
       });
 
       if (!openSession) {
-        throw new AppError(
-          409,
-          "TASK_WORK_SESSION_NOT_OPEN",
-          "Task cannot be finished without an open work session",
+        const fallbackActualMinutes = Math.max(
+          1,
+          reportedActualMinutes ?? task.estimatedMinutes ?? 1,
         );
-      }
+        const fallbackStartedAt = new Date(updatedAt.getTime() - (fallbackActualMinutes * 60 * 1000));
 
-      await tx.taskWorkSession.update({
-        where: { id: openSession.id },
-        data: {
-          endedAt: updatedAt,
-          endedByUserId: actor.userId,
-          updatedAt,
-        },
-      });
+        // Allow closing legacy/inconsistent tasks already in progress without an open session.
+        await tx.taskWorkSession.create({
+          data: {
+            taskId,
+            projectMembershipId: task.assigneeMembershipId!,
+            startedByUserId: actor.userId,
+            endedByUserId: actor.userId,
+            startedAt: fallbackStartedAt,
+            endedAt: updatedAt,
+            updatedAt,
+          },
+        });
+      } else {
+        await tx.taskWorkSession.update({
+          where: { id: openSession.id },
+          data: {
+            endedAt: updatedAt,
+            endedByUserId: actor.userId,
+            updatedAt,
+          },
+        });
+      }
     }
 
     const taskUpdateData: Prisma.TaskUncheckedUpdateInput = {
