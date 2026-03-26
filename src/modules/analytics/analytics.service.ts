@@ -450,17 +450,27 @@ export const getEmployeeDashboard = async (authUserId: number): Promise<Employee
   const tasks = await prisma.task.findMany({
     where: {
       deletedAt: null,
-      assigneeMembership: {
-        unassignedAt: null,
-        employee: {
-          userId: authUserId,
+      OR: [
+        {
+          assigneeMembership: {
+            unassignedAt: null,
+            employee: {
+              userId: authUserId,
+            },
+          },
+          project: {
+            status: {
+              name: "Activo",
+            },
+          },
         },
-      },
-      project: {
-        status: {
-          name: "Activo",
+        {
+          projectId: null,
+          assigneeEmployee: {
+            userId: authUserId,
+          },
         },
-      },
+      ],
     },
     orderBy: [{ dueDate: "asc" }, { id: "desc" }],
     include: analyticsTaskInclude,
@@ -493,8 +503,8 @@ export const getEmployeeDashboard = async (authUserId: number): Promise<Employee
       title: item.task.title,
       status: item.task.status.name,
       priority: item.task.priority.name,
-      projectId: item.task.project.id,
-      projectName: item.task.project.name,
+      projectId: item.task.project?.id ?? 0,
+      projectName: item.task.project?.name ?? "Tarea suelta",
       dueDate: toIsoDate(item.task.dueDate),
       estimatedMinutes: item.task.estimatedMinutes ?? null,
       actualMinutes: item.metrics.actualMinutes,
