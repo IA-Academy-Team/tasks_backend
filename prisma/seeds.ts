@@ -67,43 +67,23 @@ const usersSeed = [
 
 const areasSeed = [
   {
-    name: "Operaciones",
-    description: "Gestion operativa de tareas y seguimiento del trabajo diario.",
+    name: "Desarrollo de Software",
+    description: "Construccion y evolucion de productos, backend, frontend e integraciones.",
     isActive: true,
   },
   {
-    name: "Desarrollo",
-    description: "Ejecucion tecnica de iniciativas de producto y plataforma.",
+    name: "Marketing",
+    description: "Planificacion de campanas, posicionamiento de marca y comunicacion digital.",
     isActive: true,
   },
   {
-    name: "Calidad",
-    description: "Validacion funcional y tecnica antes de liberar entregas.",
+    name: "Formaciones",
+    description: "Diseno de contenidos, sesiones de capacitacion y seguimiento de aprendizaje.",
     isActive: true,
   },
   {
-    name: "Archivo",
-    description: "Area historica para reasignaciones y cierres administrativos.",
-    isActive: false,
-  },
-  {
-    name: "Producto",
-    description: "Definicion y priorizacion de roadmap funcional.",
-    isActive: true,
-  },
-  {
-    name: "Infraestructura",
-    description: "Operacion de entornos, despliegues y observabilidad.",
-    isActive: true,
-  },
-  {
-    name: "Datos",
-    description: "Modelado analitico y reporteria operativa.",
-    isActive: true,
-  },
-  {
-    name: "Atencion Cliente",
-    description: "Seguimiento de casos criticos y comunicacion externa.",
+    name: "Edicion de Videos",
+    description: "Produccion audiovisual para piezas formativas, comerciales y de soporte.",
     isActive: true,
   },
 ];
@@ -620,6 +600,22 @@ async function ensureNotification(params: {
 }
 
 async function main() {
+  await prisma.$transaction([
+    prisma.taskWorkSession.deleteMany(),
+    prisma.taskStatusTransition.deleteMany(),
+    prisma.notification.deleteMany(),
+    prisma.task.deleteMany(),
+    prisma.projectMembership.deleteMany(),
+    prisma.project.deleteMany(),
+    prisma.employeeAreaAssignment.deleteMany(),
+    prisma.employee.deleteMany(),
+    prisma.session.deleteMany(),
+    prisma.account.deleteMany(),
+    prisma.verification.deleteMany(),
+    prisma.area.deleteMany(),
+    prisma.user.deleteMany(),
+  ]);
+
   await upsertCatalog(roles, (role) =>
     prisma.role.upsert({
       where: { id: role.id },
@@ -671,9 +667,12 @@ async function main() {
     }),
   );
 
+  const targetEmployees = 15;
+  const extraEmployeesNeeded = Math.max(0, targetEmployees - 2);
+
   const expandedUsersSeed = [
     ...usersSeed,
-    ...buildExtraEmployeeSeeds(42),
+    ...buildExtraEmployeeSeeds(extraEmployeesNeeded),
   ];
 
   const users = new Map<string, Awaited<ReturnType<typeof ensureUser>>>();
@@ -703,7 +702,7 @@ async function main() {
 
   const employeeSessionUsers = expandedUsersSeed
     .filter((seed) => seed.role === "employee")
-    .slice(0, 16);
+    .slice(0, targetEmployees);
 
   for (const [index, seed] of employeeSessionUsers.entries()) {
     const user = users.get(seed.email);
@@ -738,24 +737,21 @@ async function main() {
   const lauraEmployee = employees.get(lauraUser.email)!;
   const sofiaEmployee = employees.get(sofiaUser.email)!;
 
-  const operacionesArea = areas.get("Operaciones")!;
-  const desarrolloArea = areas.get("Desarrollo")!;
-  const calidadArea = areas.get("Calidad")!;
-  const productoArea = areas.get("Producto")!;
-  const infraestructuraArea = areas.get("Infraestructura")!;
-  const datosArea = areas.get("Datos")!;
-  const atencionClienteArea = areas.get("Atencion Cliente")!;
+  const desarrolloSoftwareArea = areas.get("Desarrollo de Software")!;
+  const marketingArea = areas.get("Marketing")!;
+  const formacionesArea = areas.get("Formaciones")!;
+  const edicionVideosArea = areas.get("Edicion de Videos")!;
 
   await ensureAreaAssignment({
     employeeId: lauraEmployee.id,
-    areaId: operacionesArea.id,
+    areaId: marketingArea.id,
     assignedByUserId: adminUser.id,
     assignedAt: daysAgo(120),
   });
 
   await ensureAreaAssignment({
     employeeId: sofiaEmployee.id,
-    areaId: operacionesArea.id,
+    areaId: marketingArea.id,
     assignedByUserId: adminUser.id,
     assignedAt: daysAgo(150),
     endedAt: daysAgo(90),
@@ -764,26 +760,23 @@ async function main() {
 
   await ensureAreaAssignment({
     employeeId: sofiaEmployee.id,
-    areaId: calidadArea.id,
+    areaId: formacionesArea.id,
     assignedByUserId: adminUser.id,
     assignedAt: daysAgo(90),
   });
 
   await ensureAreaAssignment({
     employeeId: lauraEmployee.id,
-    areaId: desarrolloArea.id,
+    areaId: desarrolloSoftwareArea.id,
     assignedByUserId: adminUser.id,
     assignedAt: daysAgo(60),
   });
 
   const activeAreasForDistribution = [
-    operacionesArea,
-    desarrolloArea,
-    calidadArea,
-    productoArea,
-    infraestructuraArea,
-    datosArea,
-    atencionClienteArea,
+    desarrolloSoftwareArea,
+    marketingArea,
+    formacionesArea,
+    edicionVideosArea,
   ];
 
   const extraEmployeeSeeds = expandedUsersSeed.filter((seed) =>
@@ -905,15 +898,15 @@ async function main() {
   };
 
   const projectOperaciones = await ensureProject({
-    areaId: operacionesArea.id,
+    areaId: marketingArea.id,
     projectStatusId: activeProjectStatusId,
-    name: "Mesa de Soporte Interna",
-    description: "Proyecto para centralizar tickets y seguimiento de atencion interna.",
+    name: "Campana Retencion Q1",
+    description: "Gestion de mensajes, segmentacion y seguimiento de conversion trimestral.",
     startDate: daysAgo(70),
   });
 
   const projectDesarrollo = await ensureProject({
-    areaId: desarrolloArea.id,
+    areaId: desarrolloSoftwareArea.id,
     projectStatusId: activeProjectStatusId,
     name: "Backend API v2",
     description: "Refactor del backend para autenticacion, tareas y reporterias.",
@@ -921,59 +914,57 @@ async function main() {
   });
 
   const projectCalidad = await ensureProject({
-    areaId: calidadArea.id,
+    areaId: formacionesArea.id,
     projectStatusId: closedProjectStatusId,
-    name: "Regression Sprint Enero",
-    description: "Cobertura funcional y tecnica de los cambios previos al lanzamiento.",
+    name: "Plan de Formacion Onboarding",
+    description: "Programa de capacitacion para nuevos ingresos del trimestre.",
     startDate: daysAgo(95),
     endDate: daysAgo(25),
     closedAt: daysAgo(25),
   });
 
   const projectLegacy = await ensureProject({
-    areaId: operacionesArea.id,
+    areaId: edicionVideosArea.id,
     projectStatusId: closedProjectStatusId,
-    name: "Migracion Legacy",
-    description: "Iniciativa desactivada para migrar operaciones historicas.",
+    name: "Repositorio Audiovisual Legacy",
+    description: "Iniciativa historica cerrada de reorganizacion de piezas audiovisuales.",
     startDate: daysAgo(130),
     endDate: daysAgo(80),
     closedAt: daysAgo(80),
   });
 
   const generatedProjects: Awaited<ReturnType<typeof ensureProject>>[] = [];
+  const targetProjects = 15;
+  const baseProjectsCount = 4;
+  const generatedProjectsCount = Math.max(0, targetProjects - baseProjectsCount);
   const projectAreas = [
-    operacionesArea,
-    desarrolloArea,
-    calidadArea,
-    productoArea,
-    infraestructuraArea,
-    datosArea,
-    atencionClienteArea,
+    desarrolloSoftwareArea,
+    marketingArea,
+    formacionesArea,
+    edicionVideosArea,
   ];
 
-  for (const [areaIndex, area] of projectAreas.entries()) {
-    for (let cycle = 1; cycle <= 4; cycle += 1) {
-      const projectOrder = areaIndex * 4 + cycle;
-      const statusSelector = projectOrder % 9;
-      const projectStatusId = statusSelector <= 5
-        ? activeProjectStatusId
-        : closedProjectStatusId;
+  for (let projectOrder = 1; projectOrder <= generatedProjectsCount; projectOrder += 1) {
+    const area = projectAreas[(projectOrder - 1) % projectAreas.length]!;
+    const statusSelector = projectOrder % 5;
+    const projectStatusId = statusSelector <= 3
+      ? activeProjectStatusId
+      : closedProjectStatusId;
 
-      const isClosed = projectStatusId !== activeProjectStatusId;
-      const endDate = isClosed ? daysAgo(20 + projectOrder) : null;
+    const isClosed = projectStatusId !== activeProjectStatusId;
+    const endDate = isClosed ? daysAgo(20 + projectOrder) : null;
 
-      const project = await ensureProject({
-        areaId: area.id,
-        projectStatusId,
-        name: `${area.name} - Operacion ${String(projectOrder).padStart(2, "0")}`,
-        description: `Flujo operativo de ${area.name} para ejecucion continua del ciclo ${projectOrder}.`,
-        startDate: daysAgo(180 - projectOrder * 3),
-        endDate,
-        closedAt: isClosed ? endDate : null,
-      });
+    const project = await ensureProject({
+      areaId: area.id,
+      projectStatusId,
+      name: `${area.name} - Proyecto ${String(projectOrder).padStart(2, "0")}`,
+      description: `Proyecto operativo de ${area.name} para el ciclo ${projectOrder}.`,
+      startDate: daysAgo(180 - projectOrder * 4),
+      endDate,
+      closedAt: isClosed ? endDate : null,
+    });
 
-      generatedProjects.push(project);
-    }
+    generatedProjects.push(project);
   }
 
   const lauraSupportMembership = await ensureProjectMembership({
@@ -1276,9 +1267,16 @@ async function main() {
     endedAt: reportSessionEnd,
   });
 
+  const targetTasks = 100;
+  const fixedTasksCount = 5;
+  const trendTasksTarget = 12;
+  const generatedTasksTarget = Math.max(0, targetTasks - fixedTasksCount - trendTasksTarget);
+
   for (const [projectIndex, project] of generatedProjects.entries()) {
     const memberships = generatedMembershipsByProject.get(project.id) ?? [];
-    const tasksPerProject = project.projectStatusId === activeProjectStatusId ? 14 : 9;
+    const baseTasksPerProject = Math.floor(generatedTasksTarget / generatedProjects.length);
+    const extraTasksRemainder = generatedTasksTarget % generatedProjects.length;
+    const tasksPerProject = baseTasksPerProject + (projectIndex < extraTasksRemainder ? 1 : 0);
 
     for (let taskIndex = 0; taskIndex < tasksPerProject; taskIndex += 1) {
       const selector = (projectIndex + taskIndex) % 10;
@@ -1389,7 +1387,7 @@ async function main() {
   const trendYear = trendAnchorDate.getUTCFullYear();
   const trendMonthIndex = trendAnchorDate.getUTCMonth();
   const trendDaysInMonth = getDaysInUtcMonth(trendYear, trendMonthIndex);
-  const trendWeekCount = Math.max(1, Math.ceil(trendDaysInMonth / 7));
+  const trendWeekCount = 4;
   const trendMonthLabel = `${trendYear}-${String(trendMonthIndex + 1).padStart(2, "0")}`;
   const trendMembershipPool = [lauraSupportMembership, lauraDevMembership, sofiaDevMembership];
 
@@ -1456,12 +1454,12 @@ async function main() {
     userId: lauraUser.id,
     notificationTypeId: areaAssignmentTypeId,
     title: "Nueva asignacion de area",
-    message: `Fuiste asignada al area ${operacionesArea.name}.`,
+    message: `Fuiste asignada al area ${marketingArea.name}.`,
     resourceType: "area",
-    resourceId: operacionesArea.id,
+    resourceId: marketingArea.id,
     metadata: {
-      areaId: operacionesArea.id,
-      areaName: operacionesArea.name,
+      areaId: marketingArea.id,
+      areaName: marketingArea.name,
       assignedByUserId: adminUser.id,
     },
     createdAt: daysAgo(120),
@@ -1473,12 +1471,12 @@ async function main() {
     userId: lauraUser.id,
     notificationTypeId: areaAssignmentTypeId,
     title: "Nueva asignacion de area",
-    message: `Fuiste asignada al area ${desarrolloArea.name}.`,
+    message: `Fuiste asignada al area ${desarrolloSoftwareArea.name}.`,
     resourceType: "area",
-    resourceId: desarrolloArea.id,
+    resourceId: desarrolloSoftwareArea.id,
     metadata: {
-      areaId: desarrolloArea.id,
-      areaName: desarrolloArea.name,
+      areaId: desarrolloSoftwareArea.id,
+      areaName: desarrolloSoftwareArea.name,
       assignedByUserId: adminUser.id,
     },
     createdAt: daysAgo(60),
