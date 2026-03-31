@@ -79,6 +79,11 @@ export const reassignProjectMembershipSchema = z.object({
   toEmployeeId: z.coerce.number().int().positive(),
 });
 
+export const reassignProjectTasksSchema = z.object({
+  fromEmployeeId: z.coerce.number().int().positive(),
+  toEmployeeId: z.coerce.number().int().positive(),
+});
+
 export type ProjectsListQuery = z.infer<typeof projectsListQuerySchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
@@ -86,3 +91,4 @@ export type UpdateProjectStatusInput = z.infer<typeof updateProjectStatusSchema>
 export type ProjectMembershipsListQuery = z.infer<typeof projectMembershipsListQuerySchema>;
 export type AssignProjectMembershipInput = z.infer<typeof assignProjectMembershipSchema>;
 export type ReassignProjectMembershipInput = z.infer<typeof reassignProjectMembershipSchema>;
+export type ReassignProjectTasksInput = z.infer<typeof reassignProjectTasksSchema>;

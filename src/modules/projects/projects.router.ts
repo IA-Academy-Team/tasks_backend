@@ -14,6 +14,7 @@ import {
   projectMembershipsListQuerySchema,
   projectsListQuerySchema,
   reassignProjectMembershipSchema,
+  reassignProjectTasksSchema,
   updateProjectSchema,
   updateProjectStatusSchema,
 } from "./projects.schemas.js";
@@ -25,6 +26,7 @@ import {
   listProjectMemberships,
   listProjects,
   reassignProjectMembership,
+  reassignProjectTasks,
   unassignProjectMembership,
   updateProject,
   updateProjectStatus,
@@ -212,6 +214,34 @@ projectsRouter.patch(
           400,
           "VALIDATION_ERROR",
           "Invalid project membership identifier",
+          error.flatten(),
+        ));
+        return;
+      }
+
+      next(error);
+    }
+  },
+);
+
+projectsRouter.patch(
+  "/:projectId/tasks/reassign",
+  requireRole("admin"),
+  async (req, res, next) => {
+    try {
+      const { projectId } = projectIdParamsSchema.parse(req.params);
+      const payload = reassignProjectTasksSchema.parse(req.body);
+      const authenticatedRequest = req as unknown as AuthenticatedRequest;
+      const actorUserId = authenticatedRequest.auth.user.id;
+      const result = await reassignProjectTasks(projectId, payload, actorUserId);
+
+      res.status(200).json({ data: result });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        next(new AppError(
+          400,
+          "VALIDATION_ERROR",
+          "Invalid project task reassignment payload",
           error.flatten(),
         ));
         return;

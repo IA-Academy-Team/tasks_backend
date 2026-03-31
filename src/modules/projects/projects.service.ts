@@ -8,6 +8,7 @@ import type {
   ProjectMembershipsListQuery,
   ProjectsListQuery,
   ReassignProjectMembershipInput,
+  ReassignProjectTasksInput,
   UpdateProjectInput,
   UpdateProjectStatusInput,
 } from "./projects.schemas.js";
@@ -107,6 +108,14 @@ export interface ProjectMembershipDto {
 export interface ReassignProjectMembershipResult {
   fromMembership: ProjectMembershipDto;
   toMembership: ProjectMembershipDto;
+}
+
+export interface ReassignProjectTasksResult {
+  projectId: number;
+  fromEmployeeId: number;
+  toEmployeeId: number;
+  reassignedTasks: number;
+  targetMembershipId: number;
 }
 
 const toIsoDate = (value: Date | null): string | null => (
@@ -886,5 +895,100 @@ export const reassignProjectMembership = async (
   return {
     fromMembership: mapProjectMembership(result.fromMembership as unknown as ProjectMembershipRecord),
     toMembership: mapProjectMembership(result.toMembership as unknown as ProjectMembershipRecord),
+  };
+};
+
+export const reassignProjectTasks = async (
+  projectId: number,
+  payload: ReassignProjectTasksInput,
+  actorUserId: number,
+): Promise<ReassignProjectTasksResult> => {
+  const project = await getProjectSummaryOrThrow(projectId);
+
+  if (payload.fromEmployeeId === payload.toEmployeeId) {
+    throw new AppError(
+      409,
+      "PROJECT_TASK_REASSIGN_SAME_EMPLOYEE",
+      "Source and target employees must be different",
+    );
+  }
+
+  await ensureEmployeeEligibleForProject(payload.toEmployeeId, project.areaId);
+
+  const doneStatus = await prisma.taskStatus.findFirst({
+    where: { name: "Terminada" },
+    select: { id: true },
+  });
+
+  if (!doneStatus) {
+    throw new AppError(500, "TASK_STATUS_NOT_CONFIGURED", "Task status 'Terminada' is not configured");
+  }
+
+  const sourceMemberships = await prisma.projectMembership.findMany({
+    where: {
+      projectId,
+      employeeId: payload.fromEmployeeId,
+    },
+    select: { id: true },
+  });
+
+  if (sourceMemberships.length === 0) {
+    throw new AppError(
+      404,
+      "PROJECT_MEMBERSHIP_NOT_FOUND",
+      "Source employee does not have memberships in this project",
+    );
+  }
+
+  const sourceMembershipIds = sourceMemberships.map((membership) => membership.id);
+  const now = new Date();
+
+  const result = await prisma.$transaction(async (tx) => {
+    let targetMembership = await tx.projectMembership.findFirst({
+      where: {
+        projectId,
+        employeeId: payload.toEmployeeId,
+        unassignedAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (!targetMembership) {
+      targetMembership = await tx.projectMembership.create({
+        data: {
+          projectId,
+          employeeId: payload.toEmployeeId,
+          assignedByUserId: actorUserId,
+          assignedAt: now,
+        },
+        select: { id: true },
+      });
+    }
+
+    const updateResult = await tx.task.updateMany({
+      where: {
+        projectId,
+        deletedAt: null,
+        assigneeMembershipId: { in: sourceMembershipIds },
+        taskStatusId: { not: doneStatus.id },
+      },
+      data: {
+        assigneeMembershipId: targetMembership.id,
+        updatedAt: now,
+      },
+    });
+
+    return {
+      targetMembershipId: targetMembership.id,
+      reassignedTasks: updateResult.count,
+    };
+  });
+
+  return {
+    projectId,
+    fromEmployeeId: payload.fromEmployeeId,
+    toEmployeeId: payload.toEmployeeId,
+    reassignedTasks: result.reassignedTasks,
+    targetMembershipId: result.targetMembershipId,
   };
 };
