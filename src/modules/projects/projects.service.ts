@@ -8,6 +8,7 @@ import type {
   ProjectMembershipsListQuery,
   ProjectsListQuery,
   ReassignProjectMembershipInput,
+  ReassignProjectTasksInput,
   UpdateProjectInput,
   UpdateProjectStatusInput,
 } from "./projects.schemas.js";
@@ -20,12 +21,11 @@ type ProjectAccessActor = {
 const PROJECT_STATUS_NAMES = {
   active: "Activo",
   closed: "Cerrado",
-  cancelled: "Cancelado",
 } as const;
 
 interface ProjectSummaryRecord {
   id: number;
-  areaId: number;
+  areaId: number | null;
   projectStatusId: number;
   name: string;
   description: string | null;
@@ -34,7 +34,7 @@ interface ProjectSummaryRecord {
   closedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
-  area: { id: number; name: string };
+  area: { id: number; name: string } | null;
   status: { id: number; name: string };
   _count: { memberships: number; tasks: number };
 }
@@ -67,7 +67,7 @@ interface ProjectMembershipRecord {
 
 export interface ProjectDto {
   id: number;
-  areaId: number;
+  areaId: number | null;
   areaName: string;
   projectStatusId: number;
   status: string;
@@ -110,6 +110,14 @@ export interface ReassignProjectMembershipResult {
   toMembership: ProjectMembershipDto;
 }
 
+export interface ReassignProjectTasksResult {
+  projectId: number;
+  fromEmployeeId: number;
+  toEmployeeId: number;
+  reassignedTasks: number;
+  targetMembershipId: number;
+}
+
 const toIsoDate = (value: Date | null): string | null => (
   value ? value.toISOString().slice(0, 10) : null
 );
@@ -121,7 +129,7 @@ const toIsoDateTime = (value: Date | null): string | null => (
 const mapProject = (project: ProjectSummaryRecord): ProjectDto => ({
   id: project.id,
   areaId: project.areaId,
-  areaName: project.area.name,
+  areaName: project.area?.name ?? "Sin area",
   projectStatusId: project.projectStatusId,
   status: project.status.name,
   name: project.name,
@@ -164,7 +172,6 @@ const resolveProjectStatusIds = async () => {
         in: [
           PROJECT_STATUS_NAMES.active,
           PROJECT_STATUS_NAMES.closed,
-          PROJECT_STATUS_NAMES.cancelled,
         ],
       },
     },
@@ -176,9 +183,8 @@ const resolveProjectStatusIds = async () => {
 
   const active = statuses.find((status) => status.name === PROJECT_STATUS_NAMES.active)?.id;
   const closed = statuses.find((status) => status.name === PROJECT_STATUS_NAMES.closed)?.id;
-  const cancelled = statuses.find((status) => status.name === PROJECT_STATUS_NAMES.cancelled)?.id;
 
-  if (!active || !closed || !cancelled) {
+  if (!active || !closed) {
     throw new AppError(
       500,
       "PROJECT_STATUSES_NOT_CONFIGURED",
@@ -186,7 +192,7 @@ const resolveProjectStatusIds = async () => {
     );
   }
 
-  return { active, closed, cancelled };
+  return { active, closed };
 };
 
 const ensureAreaActive = async (areaId: number) => {
@@ -226,7 +232,7 @@ const getProjectSummaryOrThrow = async (projectId: number): Promise<ProjectSumma
   return project as unknown as ProjectSummaryRecord;
 };
 
-const ensureEmployeeEligibleForProject = async (employeeId: number, projectAreaId: number) => {
+const ensureEmployeeEligibleForProject = async (employeeId: number, projectAreaId: number | null) => {
   const employee = await prisma.employee.findUnique({
     where: { id: employeeId },
     include: {
@@ -253,6 +259,10 @@ const ensureEmployeeEligibleForProject = async (employeeId: number, projectAreaI
 
   if (!employee.user.isActive) {
     throw new AppError(409, "EMPLOYEE_INACTIVE", "Employee is inactive");
+  }
+
+  if (projectAreaId === null) {
+    return;
   }
 
   const currentAreaAssignment = employee.areaAssignments[0];
@@ -423,18 +433,21 @@ export const getProjectById = async (
 };
 
 export const createProject = async (payload: CreateProjectInput): Promise<ProjectDto> => {
-  await ensureAreaActive(payload.areaId);
-  validateDateRange(payload.startDate ?? null, payload.endDate ?? null);
+  if (payload.areaId !== undefined && payload.areaId !== null) {
+    await ensureAreaActive(payload.areaId);
+  }
+  const resolvedStartDate = payload.startDate ?? new Date();
+  validateDateRange(resolvedStartDate, payload.endDate ?? null);
 
   const statusIds = await resolveProjectStatusIds();
 
   const project = await prisma.project.create({
     data: {
-      areaId: payload.areaId,
+      areaId: payload.areaId ?? null,
       projectStatusId: statusIds.active,
       name: payload.name,
       description: payload.description ?? null,
-      startDate: payload.startDate ?? null,
+      startDate: resolvedStartDate,
       endDate: payload.endDate ?? null,
     },
     select: { id: true },
@@ -459,7 +472,7 @@ export const updateProject = async (
 ): Promise<ProjectDto> => {
   const existingProject = await getProjectSummaryOrThrow(projectId);
 
-  if (payload.areaId !== undefined) {
+  if (payload.areaId !== undefined && payload.areaId !== null) {
     await ensureAreaActive(payload.areaId);
   }
 
@@ -473,7 +486,7 @@ export const updateProject = async (
   validateDateRange(nextStartDate, nextEndDate);
 
   const data: {
-    areaId?: number;
+    areaId?: number | null;
     name?: string;
     description?: string | null;
     startDate?: Date | null;
@@ -536,9 +549,6 @@ export const updateProjectStatus = async (
   if (payload.status === "closed") {
     nextStatusId = statusIds.closed;
   }
-  if (payload.status === "cancelled") {
-    nextStatusId = statusIds.cancelled;
-  }
 
   const data: {
     projectStatusId: number;
@@ -564,54 +574,25 @@ export const updateProjectStatus = async (
   return getProjectById(projectId);
 };
 
-export const deleteProject = async (projectId: number): Promise<DeleteProjectResult> => {
+export const deleteProject = async (
+  projectId: number,
+): Promise<DeleteProjectResult> => {
   await getProjectSummaryOrThrow(projectId);
-  const statusIds = await resolveProjectStatusIds();
-
-  const [activeMembershipCount, activeTaskCount, totalMembershipCount, totalTaskCount] = await Promise.all([
-    prisma.projectMembership.count({
-      where: { projectId, unassignedAt: null },
-    }),
-    prisma.task.count({
-      where: { projectId, deletedAt: null },
-    }),
-    prisma.projectMembership.count({
+  await prisma.$transaction(async (tx) => {
+    await tx.task.deleteMany({
       where: { projectId },
-    }),
-    prisma.task.count({
-      where: { projectId },
-    }),
-  ]);
-
-  if (activeMembershipCount > 0 || activeTaskCount > 0) {
-    throw new AppError(
-      409,
-      "PROJECT_HAS_ACTIVE_DEPENDENCIES",
-      "Project has active memberships or tasks",
-      {
-        activeMembershipCount,
-        activeTaskCount,
-      },
-    );
-  }
-
-  if (totalMembershipCount === 0 && totalTaskCount === 0) {
-    await prisma.project.delete({
-      where: { id: projectId },
     });
 
-    return { id: projectId, mode: "deleted" };
-  }
+    await tx.projectMembership.deleteMany({
+      where: { projectId },
+    });
 
-  await prisma.project.update({
-    where: { id: projectId },
-    data: {
-      projectStatusId: statusIds.cancelled,
-      closedAt: new Date(),
-    },
+    await tx.project.delete({
+      where: { id: projectId },
+    });
   });
 
-  return { id: projectId, mode: "archived" };
+  return { id: projectId, mode: "deleted" };
 };
 
 export const listProjectMemberships = async (
@@ -914,5 +895,100 @@ export const reassignProjectMembership = async (
   return {
     fromMembership: mapProjectMembership(result.fromMembership as unknown as ProjectMembershipRecord),
     toMembership: mapProjectMembership(result.toMembership as unknown as ProjectMembershipRecord),
+  };
+};
+
+export const reassignProjectTasks = async (
+  projectId: number,
+  payload: ReassignProjectTasksInput,
+  actorUserId: number,
+): Promise<ReassignProjectTasksResult> => {
+  const project = await getProjectSummaryOrThrow(projectId);
+
+  if (payload.fromEmployeeId === payload.toEmployeeId) {
+    throw new AppError(
+      409,
+      "PROJECT_TASK_REASSIGN_SAME_EMPLOYEE",
+      "Source and target employees must be different",
+    );
+  }
+
+  await ensureEmployeeEligibleForProject(payload.toEmployeeId, project.areaId);
+
+  const doneStatus = await prisma.taskStatus.findFirst({
+    where: { name: "Terminada" },
+    select: { id: true },
+  });
+
+  if (!doneStatus) {
+    throw new AppError(500, "TASK_STATUS_NOT_CONFIGURED", "Task status 'Terminada' is not configured");
+  }
+
+  const sourceMemberships = await prisma.projectMembership.findMany({
+    where: {
+      projectId,
+      employeeId: payload.fromEmployeeId,
+    },
+    select: { id: true },
+  });
+
+  if (sourceMemberships.length === 0) {
+    throw new AppError(
+      404,
+      "PROJECT_MEMBERSHIP_NOT_FOUND",
+      "Source employee does not have memberships in this project",
+    );
+  }
+
+  const sourceMembershipIds = sourceMemberships.map((membership) => membership.id);
+  const now = new Date();
+
+  const result = await prisma.$transaction(async (tx) => {
+    let targetMembership = await tx.projectMembership.findFirst({
+      where: {
+        projectId,
+        employeeId: payload.toEmployeeId,
+        unassignedAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (!targetMembership) {
+      targetMembership = await tx.projectMembership.create({
+        data: {
+          projectId,
+          employeeId: payload.toEmployeeId,
+          assignedByUserId: actorUserId,
+          assignedAt: now,
+        },
+        select: { id: true },
+      });
+    }
+
+    const updateResult = await tx.task.updateMany({
+      where: {
+        projectId,
+        deletedAt: null,
+        assigneeMembershipId: { in: sourceMembershipIds },
+        taskStatusId: { not: doneStatus.id },
+      },
+      data: {
+        assigneeMembershipId: targetMembership.id,
+        updatedAt: now,
+      },
+    });
+
+    return {
+      targetMembershipId: targetMembership.id,
+      reassignedTasks: updateResult.count,
+    };
+  });
+
+  return {
+    projectId,
+    fromEmployeeId: payload.fromEmployeeId,
+    toEmployeeId: payload.toEmployeeId,
+    reassignedTasks: result.reassignedTasks,
+    targetMembershipId: result.targetMembershipId,
   };
 };

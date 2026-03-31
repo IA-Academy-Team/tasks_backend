@@ -214,7 +214,7 @@ CREATE TABLE employee_area_assignments (
 
 CREATE TABLE projects (
     id SERIAL PRIMARY KEY,
-    area_id INT NOT NULL,
+    area_id INT,
     project_status_id INT NOT NULL DEFAULT 1,
     name VARCHAR(160) NOT NULL,
     description TEXT,
@@ -474,8 +474,7 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO project_statuses (id, name)
 VALUES
     (1, 'Activo'),
-    (2, 'Cerrado'),
-    (3, 'Cancelado')
+    (2, 'Cerrado')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO task_statuses (id, name)

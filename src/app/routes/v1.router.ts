@@ -8,11 +8,9 @@ import { projectsRouter } from "../../modules/projects/projects.router.js";
 import { tasksRouter } from "../../modules/tasks/tasks.router.js";
 import { usersRouter } from "../../modules/users/users.router.js";
 import { docsRouter } from "./docs.router.js";
-import { healthRouter } from "./health.router.js";
 
 export const apiV1Router = Router();
 
-apiV1Router.use("/health", healthRouter);
 apiV1Router.use("/", docsRouter);
 apiV1Router.use("/auth", authRouter);
 apiV1Router.use("/me", usersRouter);

@@ -208,7 +208,7 @@ const openApiDocument = {
       ProjectStatusRequest: {
         type: "object",
         properties: {
-          status: { type: "string", enum: ["active", "closed", "cancelled"] },
+          status: { type: "string", enum: ["active", "closed"] },
           endDate: { type: ["string", "null"], format: "date" },
         },
         required: ["status"],
@@ -268,6 +268,10 @@ const openApiDocument = {
       get: {
         tags: ["System"],
         summary: "Health check",
+        servers: [
+          { url: `${BACKEND_URL}`, description: "Servidor actual (sin prefijo /api)" },
+          { url: "http://localhost:3004", description: "Desarrollo local (sin prefijo /api)" },
+        ],
         responses: {
           200: {
             description: "Servicio disponible",
@@ -613,7 +617,7 @@ const openApiDocument = {
         summary: "Listar proyectos",
         security: secured,
         parameters: [
-          { name: "status", in: "query", schema: { type: "string", enum: ["all", "active", "closed", "cancelled"] } },
+          { name: "status", in: "query", schema: { type: "string", enum: ["all", "active", "closed"] } },
           { name: "areaId", in: "query", schema: { type: "integer" } },
         ],
         responses: {
@@ -935,4 +939,3 @@ const run = async () => {
 };
 
 void run();
-

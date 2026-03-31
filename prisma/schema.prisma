@@ -228,7 +228,7 @@ model EmployeeAreaAssignment {
 
 model Project {
   id              Int       @id @default(autoincrement())
-  areaId          Int       @map("area_id")
+  areaId          Int?      @map("area_id")
   projectStatusId Int       @default(1) @map("project_status_id")
   name            String    @db.VarChar(160)
   description     String?   @db.Text
@@ -238,7 +238,7 @@ model Project {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  area        Area                @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  area        Area?               @relation(fields: [areaId], references: [id], onDelete: Restrict)
   status      ProjectStatus       @relation(fields: [projectStatusId], references: [id], onDelete: Restrict)
   memberships ProjectMembership[]
   tasks       Task[]

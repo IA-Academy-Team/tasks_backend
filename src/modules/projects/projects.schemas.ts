@@ -6,12 +6,17 @@ const nullableTrimmedString = z.preprocess(
 );
 
 const nullableDateInput = z.preprocess(
+  (value) => (value === "" || value === null ? null : value),
+  z.nullable(z.coerce.date()),
+);
+
+const nullablePositiveInt = z.preprocess(
   (value) => (value === "" ? null : value),
-  z.union([z.coerce.date(), z.null()]),
+  z.union([z.coerce.number().int().positive(), z.null()]),
 );
 
 export const projectsListQuerySchema = z.object({
-  status: z.enum(["all", "active", "closed", "cancelled"]).optional().default("all"),
+  status: z.enum(["all", "active", "closed"]).optional().default("all"),
   areaId: z.coerce.number().int().positive().optional(),
 });
 
@@ -25,7 +30,7 @@ export const projectMembershipIdParamsSchema = z.object({
 });
 
 export const createProjectSchema = z.object({
-  areaId: z.coerce.number().int().positive(),
+  areaId: nullablePositiveInt.optional(),
   name: z.string().trim().min(2).max(160),
   description: nullableTrimmedString
     .refine((value) => value === null || value.length <= 5000, {
@@ -44,7 +49,7 @@ export const createProjectSchema = z.object({
 });
 
 export const updateProjectSchema = z.object({
-  areaId: z.coerce.number().int().positive().optional(),
+  areaId: nullablePositiveInt.optional(),
   name: z.string().trim().min(2).max(160).optional(),
   description: nullableTrimmedString
     .refine((value) => value === null || value.length <= 5000, {
@@ -58,7 +63,7 @@ export const updateProjectSchema = z.object({
 });
 
 export const updateProjectStatusSchema = z.object({
-  status: z.enum(["active", "closed", "cancelled"]),
+  status: z.enum(["active", "closed"]),
   endDate: nullableDateInput.optional(),
 });
 
@@ -74,6 +79,11 @@ export const reassignProjectMembershipSchema = z.object({
   toEmployeeId: z.coerce.number().int().positive(),
 });
 
+export const reassignProjectTasksSchema = z.object({
+  fromEmployeeId: z.coerce.number().int().positive(),
+  toEmployeeId: z.coerce.number().int().positive(),
+});
+
 export type ProjectsListQuery = z.infer<typeof projectsListQuerySchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
@@ -81,3 +91,4 @@ export type UpdateProjectStatusInput = z.infer<typeof updateProjectStatusSchema>
 export type ProjectMembershipsListQuery = z.infer<typeof projectMembershipsListQuerySchema>;
 export type AssignProjectMembershipInput = z.infer<typeof assignProjectMembershipSchema>;
 export type ReassignProjectMembershipInput = z.infer<typeof reassignProjectMembershipSchema>;
+export type ReassignProjectTasksInput = z.infer<typeof reassignProjectTasksSchema>;

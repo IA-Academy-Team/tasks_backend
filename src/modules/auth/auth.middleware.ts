@@ -21,11 +21,6 @@ export const requireAuth = async (
       return;
     }
 
-    if (!currentSession.user.isActive) {
-      next(new AppError(403, "USER_INACTIVE", "User account is inactive"));
-      return;
-    }
-
     (req as AuthenticatedRequest).auth = currentSession;
     next();
   } catch (error) {
@@ -53,4 +48,3 @@ export const requireRole = (...allowedRoles: AuthRole[]) => (
 
   next();
 };
-
