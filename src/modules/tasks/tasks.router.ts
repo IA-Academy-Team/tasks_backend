@@ -34,7 +34,11 @@ tasksRouter.use(requireAuth);
 tasksRouter.get("/", async (req, res, next) => {
   try {
     const query = tasksListQuerySchema.parse(req.query);
-    const tasks = await listTasks(query);
+    const authenticatedRequest = req as unknown as AuthenticatedRequest;
+    const tasks = await listTasks(query, {
+      userId: authenticatedRequest.auth.user.id,
+      role: authenticatedRequest.auth.user.role,
+    });
 
     res.status(200).json({ data: tasks });
   } catch (error) {
@@ -137,11 +141,15 @@ tasksRouter.post("/standalone", async (req, res, next) => {
   }
 });
 
-tasksRouter.patch("/:taskId", requireRole("admin"), async (req, res, next) => {
+tasksRouter.patch("/:taskId", async (req, res, next) => {
   try {
     const { taskId } = taskIdParamsSchema.parse(req.params);
     const payload = updateTaskSchema.parse(req.body);
-    const task = await updateTask(taskId, payload);
+    const authenticatedRequest = req as unknown as AuthenticatedRequest;
+    const task = await updateTask(taskId, payload, {
+      userId: authenticatedRequest.auth.user.id,
+      role: authenticatedRequest.auth.user.role,
+    });
 
     res.status(200).json({ data: task });
   } catch (error) {

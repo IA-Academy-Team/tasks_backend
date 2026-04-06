@@ -125,7 +125,17 @@ interface TransitionTaskActor {
   role: AuthRole;
 }
 
+interface TaskUpdateActor {
+  userId: number;
+  role: AuthRole;
+}
+
 interface StandaloneTaskActor {
+  userId: number;
+  role: AuthRole;
+}
+
+interface TaskListActor {
   userId: number;
   role: AuthRole;
 }
@@ -729,7 +739,10 @@ const getStatusNameByFilter = (status: TasksListQuery["status"]): string | null 
   return null;
 };
 
-export const listTasks = async (query: TasksListQuery): Promise<TaskDto[]> => {
+export const listTasks = async (
+  query: TasksListQuery,
+  actor: TaskListActor,
+): Promise<TaskDto[]> => {
   const where: Prisma.TaskWhereInput = {};
 
   if (query.projectId !== undefined) {
@@ -745,6 +758,28 @@ export const listTasks = async (query: TasksListQuery): Promise<TaskDto[]> => {
 
   if (!query.includeDeleted) {
     where.deletedAt = null;
+  }
+
+  if (actor.role === "employee") {
+    where.OR = [
+      {
+        assigneeMembership: {
+          is: {
+            unassignedAt: null,
+            employee: {
+              userId: actor.userId,
+            },
+          },
+        },
+      },
+      {
+        assigneeEmployee: {
+          is: {
+            userId: actor.userId,
+          },
+        },
+      },
+    ];
   }
 
   const tasks = await prisma.task.findMany({
@@ -981,6 +1016,7 @@ export const createStandaloneTask = async (
 export const updateTask = async (
   taskId: number,
   payload: UpdateTaskInput,
+  actor: TaskUpdateActor,
 ): Promise<TaskDto> => {
   const existingTask = await getTaskOrThrow(taskId);
   const project = existingTask.projectId === null
@@ -989,6 +1025,14 @@ export const updateTask = async (
 
   if (existingTask.deletedAt) {
     throw new AppError(409, "TASK_SOFT_DELETED", "Task is deleted and cannot be modified");
+  }
+
+  if (actor.role === "employee" && existingTask.createdByUserId !== actor.userId) {
+    throw new AppError(
+      403,
+      "TASK_UPDATE_FORBIDDEN",
+      "Employee can only edit full task details for tasks they created",
+    );
   }
 
   const nextPlannedStartDate = payload.plannedStartDate ?? existingTask.plannedStartDate;
