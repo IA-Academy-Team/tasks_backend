@@ -344,6 +344,10 @@ const getTaskOrThrow = async (taskId: number): Promise<TaskRecord> => {
     throw new AppError(404, "TASK_NOT_FOUND", "Task not found");
   }
 
+  if (task.project && task.project.status.name !== "Activo") {
+    throw new AppError(404, "TASK_NOT_FOUND", "Task not found");
+  }
+
   return task as unknown as TaskRecord;
 };
 
@@ -632,6 +636,15 @@ const ensureTaskTransitionAccess = async (taskId: number, actor: TransitionTaskA
     select: {
       id: true,
       projectId: true,
+      project: {
+        select: {
+          status: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
       createdByUserId: true,
       assigneeMembershipId: true,
       assigneeEmployeeId: true,
@@ -677,6 +690,10 @@ const ensureTaskTransitionAccess = async (taskId: number, actor: TransitionTaskA
   });
 
   if (!task) {
+    throw new AppError(404, "TASK_NOT_FOUND", "Task not found");
+  }
+
+  if (task.projectId !== null && task.project?.status.name !== "Activo") {
     throw new AppError(404, "TASK_NOT_FOUND", "Task not found");
   }
 
@@ -743,47 +760,78 @@ export const listTasks = async (
   query: TasksListQuery,
   actor: TaskListActor,
 ): Promise<TaskDto[]> => {
-  const where: Prisma.TaskWhereInput = {};
+  const whereClauses: Prisma.TaskWhereInput[] = [];
 
   if (query.projectId !== undefined) {
-    where.projectId = query.projectId;
+    whereClauses.push({ projectId: query.projectId });
+    whereClauses.push({
+      project: {
+        status: {
+          name: "Activo",
+        },
+      },
+    });
   } else if (!query.includeStandalone) {
-    where.projectId = { not: null };
+    whereClauses.push({ projectId: { not: null } });
+    whereClauses.push({
+      project: {
+        status: {
+          name: "Activo",
+        },
+      },
+    });
+  } else {
+    whereClauses.push({
+      OR: [
+        { projectId: null },
+        {
+          project: {
+            status: {
+              name: "Activo",
+            },
+          },
+        },
+      ],
+    });
   }
 
   const statusName = getStatusNameByFilter(query.status);
   if (statusName) {
-    where.status = { name: statusName };
+    whereClauses.push({ status: { name: statusName } });
   }
 
   if (!query.includeDeleted) {
-    where.deletedAt = null;
+    whereClauses.push({ deletedAt: null });
   }
 
   if (actor.role === "employee") {
-    where.OR = [
-      {
-        assigneeMembership: {
-          is: {
-            unassignedAt: null,
-            employee: {
+    whereClauses.push({
+      OR: [
+        {
+          assigneeMembership: {
+            is: {
+              unassignedAt: null,
+              employee: {
+                userId: actor.userId,
+              },
+            },
+          },
+        },
+        {
+          assigneeEmployee: {
+            is: {
               userId: actor.userId,
             },
           },
         },
-      },
-      {
-        assigneeEmployee: {
-          is: {
-            userId: actor.userId,
-          },
-        },
-      },
-    ];
+      ],
+    });
   }
 
   const tasks = await prisma.task.findMany({
-    where,
+    where: {
+      AND: whereClauses,
+    },
     orderBy: [{ dueDate: "asc" }, { id: "desc" }],
     include: taskMetricsInclude,
   });

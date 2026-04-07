@@ -317,6 +317,13 @@ const buildTaskWhereClausesFromFilters = (
   const whereClauses: Prisma.TaskWhereInput[] = [
     { deletedAt: null },
     { projectId: { not: null } },
+    {
+      project: {
+        status: {
+          name: "Activo",
+        },
+      },
+    },
   ];
 
   if (filters.projectId !== undefined) {
