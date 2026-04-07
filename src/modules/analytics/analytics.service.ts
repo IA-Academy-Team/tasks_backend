@@ -495,8 +495,14 @@ export const getEmployeeDashboard = async (authUserId: number): Promise<Employee
   const upcomingTasks = computedTasks
     .filter((item) => {
       if (item.task.status.name === TASK_STATUS_NAMES.done) return false;
+
       const dueDay = toUtcDayNumber(item.task.dueDate);
-      return dueDay >= todayDay && dueDay <= upcomingLimitDay;
+      const isInUpcomingWindow = dueDay <= upcomingLimitDay;
+      const isInProgress = item.task.status.name === TASK_STATUS_NAMES.inProgress;
+
+      // Include overdue/near-term tasks and always keep "En proceso" visible
+      // so employee dashboard can render active sessions consistently.
+      return isInUpcomingWindow || isInProgress;
     })
     .map((item) => ({
       id: item.task.id,
