@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
@@ -11,4 +5,333 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+model Role {
+  id   Int    @id @default(autoincrement())
+  name String @unique @db.VarChar(50)
+
+  users User[]
+
+  @@map("roles")
+}
+
+model ProjectStatus {
+  id   Int    @id @default(autoincrement())
+  name String @db.VarChar(50)
+
+  projects Project[]
+
+  @@map("project_statuses")
+}
+
+model TaskStatus {
+  id   Int    @id @default(autoincrement())
+  name String @db.VarChar(50)
+
+  tasks           Task[]
+  transitionsFrom TaskStatusTransition[] @relation("TaskTransitionsFromStatus")
+  transitionsTo   TaskStatusTransition[] @relation("TaskTransitionsToStatus")
+
+  @@map("task_statuses")
+}
+
+model TaskPriority {
+  id   Int    @id @default(autoincrement())
+  name String @db.VarChar(50)
+
+  tasks Task[]
+
+  @@map("task_priorities")
+}
+
+model NotificationType {
+  id   Int    @id @default(autoincrement())
+  code String @unique(map: "uq_notification_types_code") @db.VarChar(50)
+  name String @db.VarChar(100)
+
+  notifications Notification[]
+
+  @@map("notification_types")
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  name          String   @db.VarChar(150)
+  email         String   @unique(map: "uq_users_email") @db.VarChar(320)
+  emailVerified Boolean  @default(false) @map("email_verified")
+  image         String?  @db.Text
+  phoneNumber   String?  @map("phone_number") @db.VarChar(30)
+  roleId        Int      @default(1) @map("role_id")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  role                       Role                     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  accounts                   Account[]
+  sessions                   Session[]
+  employee                   Employee?
+  areaAssignmentsStarted     EmployeeAreaAssignment[] @relation("AreaAssignmentsStartedBy")
+  areaAssignmentsEnded       EmployeeAreaAssignment[] @relation("AreaAssignmentsEndedBy")
+  projectMembershipsAssigned ProjectMembership[]      @relation("ProjectMembershipsAssignedBy")
+  projectMembershipsEnded    ProjectMembership[]      @relation("ProjectMembershipsEndedBy")
+  tasksCreated               Task[]                   @relation("TasksCreatedBy")
+  taskTransitionsChanged     TaskStatusTransition[]   @relation("TaskStatusTransitionsChangedBy")
+  workSessionsStarted        TaskWorkSession[]        @relation("TaskWorkSessionsStartedBy")
+  workSessionsEnded          TaskWorkSession[]        @relation("TaskWorkSessionsEndedBy")
+  notifications              Notification[]
+
+  @@index([roleId], map: "idx_users_role_id")
+  @@index([isActive], map: "idx_users_is_active")
+  @@map("users")
+}
+
+model Notification {
+  id                 Int       @id @default(autoincrement())
+  userId             Int       @map("user_id")
+  notificationTypeId Int       @map("notification_type_id")
+  title              String    @db.VarChar(180)
+  message            String    @db.Text
+  resourceType       String?   @map("resource_type") @db.VarChar(50)
+  resourceId         Int?      @map("resource_id")
+  metadata           Json?     @db.JsonB
+  isRead             Boolean   @default(false) @map("is_read")
+  readAt             DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notificationType NotificationType @relation(fields: [notificationTypeId], references: [id], onDelete: Restrict)
+
+  @@index([userId, isRead, createdAt], map: "idx_notifications_user_read_created")
+  @@index([userId, readAt], map: "idx_notifications_user_read_at")
+  @@index([notificationTypeId], map: "idx_notifications_type_id")
+  @@index([resourceType, resourceId], map: "idx_notifications_resource")
+  @@map("notifications")
+}
+
+model Account {
+  id                    Int       @id @default(autoincrement())
+  userId                Int       @map("user_id")
+  providerId            String    @map("provider_id") @db.VarChar(80)
+  providerAccountId     String    @map("provider_account_id") @db.VarChar(255)
+  accessToken           String?   @map("access_token") @db.Text
+  refreshToken          String?   @map("refresh_token") @db.Text
+  idToken               String?   @map("id_token") @db.Text
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at") @db.Timestamptz(6)
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at") @db.Timestamptz(6)
+  scope                 String?   @db.Text
+  password              String?   @db.VarChar(255)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, providerAccountId], map: "uq_accounts_provider_account")
+  @@index([userId], map: "idx_accounts_user_id")
+  @@map("accounts")
+}
+
+model Session {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  token     String   @unique(map: "uq_sessions_token") @db.VarChar(255)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  ipAddress String?  @map("ip_address") @db.VarChar(45)
+  userAgent String?  @map("user_agent") @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt], map: "idx_sessions_user_expires_at")
+  @@index([expiresAt], map: "idx_sessions_expires_at")
+  @@map("sessions")
+}
+
+model Verification {
+  id         Int      @id @default(autoincrement())
+  identifier String   @db.VarChar(320)
+  value      String   @db.VarChar(255)
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([identifier, value], map: "uq_verifications_identifier_value")
+  @@index([identifier], map: "idx_verifications_identifier")
+  @@index([expiresAt], map: "idx_verifications_expires_at")
+  @@map("verifications")
+}
+
+model Employee {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique(map: "uq_employees_user_id") @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user               User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  areaAssignments    EmployeeAreaAssignment[]
+  projectMemberships ProjectMembership[]
+  standaloneTasks    Task[]                   @relation("TaskAssigneeEmployee")
+
+  @@map("employees")
+}
+
+model Area {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique(map: "uq_areas_name") @db.VarChar(120)
+  description String?  @db.Text
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  employeeAreaAssignments EmployeeAreaAssignment[]
+  projects                Project[]
+
+  @@index([isActive], map: "idx_areas_is_active")
+  @@map("areas")
+}
+
+model EmployeeAreaAssignment {
+  id               Int       @id @default(autoincrement())
+  employeeId       Int       @map("employee_id")
+  areaId           Int       @map("area_id")
+  assignedByUserId Int       @map("assigned_by_user_id")
+  endedByUserId    Int?      @map("ended_by_user_id")
+  assignedAt       DateTime  @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  endedAt          DateTime? @map("ended_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  area           Area     @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  assignedByUser User     @relation("AreaAssignmentsStartedBy", fields: [assignedByUserId], references: [id], onDelete: Restrict)
+  endedByUser    User?    @relation("AreaAssignmentsEndedBy", fields: [endedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([employeeId, endedAt], map: "idx_employee_area_assignments_employee_ended_at")
+  @@index([areaId, endedAt], map: "idx_employee_area_assignments_area_ended_at")
+  @@map("employee_area_assignments")
+}
+
+model Project {
+  id              Int       @id @default(autoincrement())
+  areaId          Int?      @map("area_id")
+  projectStatusId Int       @default(1) @map("project_status_id")
+  name            String    @db.VarChar(160)
+  description     String?   @db.Text
+  startDate       DateTime? @map("start_date") @db.Date
+  endDate         DateTime? @map("end_date") @db.Date
+  closedAt        DateTime? @map("closed_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  area        Area?               @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  status      ProjectStatus       @relation(fields: [projectStatusId], references: [id], onDelete: Restrict)
+  memberships ProjectMembership[]
+  tasks       Task[]
+
+  @@unique([areaId, name], map: "uq_projects_area_name")
+  @@index([areaId, projectStatusId], map: "idx_projects_area_status_id")
+  @@map("projects")
+}
+
+model ProjectMembership {
+  id               Int       @id @default(autoincrement())
+  projectId        Int       @map("project_id")
+  employeeId       Int       @map("employee_id")
+  assignedByUserId Int       @map("assigned_by_user_id")
+  endedByUserId    Int?      @map("ended_by_user_id")
+  assignedAt       DateTime  @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  unassignedAt     DateTime? @map("unassigned_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project        Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  employee       Employee          @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  assignedByUser User              @relation("ProjectMembershipsAssignedBy", fields: [assignedByUserId], references: [id], onDelete: Restrict)
+  endedByUser    User?             @relation("ProjectMembershipsEndedBy", fields: [endedByUserId], references: [id], onDelete: Restrict)
+  assignedTasks  Task[]            @relation("TaskAssigneeMembership")
+  workSessions   TaskWorkSession[]
+
+  @@index([projectId, unassignedAt], map: "idx_project_memberships_project_unassigned_at")
+  @@index([employeeId, unassignedAt], map: "idx_project_memberships_employee_unassigned_at")
+  @@map("project_memberships")
+}
+
+model Task {
+  id                   Int       @id @default(autoincrement())
+  projectId            Int?      @map("project_id")
+  assigneeMembershipId Int?      @map("assignee_membership_id")
+  assigneeEmployeeId   Int?      @map("assignee_employee_id")
+  taskStatusId         Int       @default(1) @map("task_status_id")
+  taskPriorityId       Int       @default(2) @map("task_priority_id")
+  title                String    @db.VarChar(160)
+  description          String?   @db.Text
+  plannedStartDate     DateTime  @map("planned_start_date") @db.Date
+  dueDate              DateTime  @map("due_date") @db.Date
+  estimatedMinutes     Int?      @map("estimated_minutes")
+  reportedActualMinutes Int?     @map("reported_actual_minutes")
+  completionEvidence   String?   @map("completion_evidence") @db.Text
+  deletedAt            DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdByUserId      Int       @map("created_by_user_id")
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project            Project?               @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  assigneeMembership ProjectMembership?     @relation("TaskAssigneeMembership", fields: [assigneeMembershipId], references: [id], onDelete: Restrict)
+  assigneeEmployee   Employee?              @relation("TaskAssigneeEmployee", fields: [assigneeEmployeeId], references: [id], onDelete: Restrict)
+  status             TaskStatus             @relation(fields: [taskStatusId], references: [id], onDelete: Restrict)
+  priority           TaskPriority           @relation(fields: [taskPriorityId], references: [id], onDelete: Restrict)
+  createdByUser      User                   @relation("TasksCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  statusTransitions  TaskStatusTransition[]
+  workSessions       TaskWorkSession[]
+
+  @@index([projectId, taskStatusId], map: "idx_tasks_project_status_id")
+  @@index([assigneeMembershipId, taskStatusId], map: "idx_tasks_assignee_status_id")
+  @@index([assigneeEmployeeId], map: "idx_tasks_assignee_employee_id")
+  @@index([taskPriorityId], map: "idx_tasks_task_priority_id")
+  @@index([dueDate], map: "idx_tasks_due_date")
+  @@index([deletedAt], map: "idx_tasks_deleted_at")
+  @@map("tasks")
+}
+
+model TaskStatusTransition {
+  id              Int      @id @default(autoincrement())
+  taskId          Int      @map("task_id")
+  fromStatusId    Int?     @map("from_status_id")
+  toStatusId      Int      @map("to_status_id")
+  changedByUserId Int      @map("changed_by_user_id")
+  changedAt       DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
+  notes           String?  @db.Text
+
+  task          Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fromStatus    TaskStatus? @relation("TaskTransitionsFromStatus", fields: [fromStatusId], references: [id], onDelete: Restrict)
+  toStatus      TaskStatus  @relation("TaskTransitionsToStatus", fields: [toStatusId], references: [id], onDelete: Restrict)
+  changedByUser User        @relation("TaskStatusTransitionsChangedBy", fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([taskId, changedAt], map: "idx_task_status_transitions_task_changed_at")
+  @@index([fromStatusId], map: "idx_task_status_transitions_from_status_id")
+  @@index([toStatusId], map: "idx_task_status_transitions_to_status_id")
+  @@map("task_status_transitions")
+}
+
+model TaskWorkSession {
+  id                  Int       @id @default(autoincrement())
+  taskId              Int       @map("task_id")
+  projectMembershipId Int       @map("project_membership_id")
+  startedByUserId     Int       @map("started_by_user_id")
+  endedByUserId       Int?      @map("ended_by_user_id")
+  startedAt           DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt             DateTime? @map("ended_at") @db.Timestamptz(6)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  task              Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  projectMembership ProjectMembership @relation(fields: [projectMembershipId], references: [id], onDelete: Restrict)
+  startedByUser     User              @relation("TaskWorkSessionsStartedBy", fields: [startedByUserId], references: [id], onDelete: Restrict)
+  endedByUser       User?             @relation("TaskWorkSessionsEndedBy", fields: [endedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([taskId, startedAt], map: "idx_task_work_sessions_task_started_at")
+  @@index([projectMembershipId, startedAt], map: "idx_task_work_sessions_membership_started_at")
+  @@map("task_work_sessions")
 }
