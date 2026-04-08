@@ -217,52 +217,36 @@ export const updateAreaStatus = async (
 export const deleteArea = async (areaId: number): Promise<DeleteAreaResult> => {
   await getAreaOrThrow(areaId);
 
-  const [activeMemberCount, activeProjectCount] = await Promise.all([
-    prisma.employeeAreaAssignment.count({
+  await prisma.$transaction(async (tx) => {
+    const now = new Date();
+
+    // Desasocia empleados activos de esta area.
+    await tx.employeeAreaAssignment.updateMany({
       where: {
         areaId,
         endedAt: null,
       },
-    }),
-    prisma.project.count({
-      where: {
-        areaId,
-        status: {
-          name: "Activo",
-        },
+      data: {
+        endedAt: now,
+        endedByUserId: null,
       },
-    }),
-  ]);
-
-  if (activeMemberCount > 0 || activeProjectCount > 0) {
-    throw new AppError(
-      409,
-      "AREA_HAS_ACTIVE_DEPENDENCIES",
-      "Area has active dependencies",
-      {
-        activeMemberCount,
-        activeProjectCount,
-      },
-    );
-  }
-
-  const [totalAreaAssignments, totalProjects] = await Promise.all([
-    prisma.employeeAreaAssignment.count({ where: { areaId } }),
-    prisma.project.count({ where: { areaId } }),
-  ]);
-
-  if (totalAreaAssignments === 0 && totalProjects === 0) {
-    await prisma.area.delete({
-      where: { id: areaId },
     });
 
-    return { id: areaId, mode: "deleted" };
-  }
+    // Desasocia proyectos de esta area.
+    await tx.project.updateMany({
+      where: { areaId },
+      data: { areaId: null },
+    });
 
-  await prisma.area.update({
-    where: { id: areaId },
-    data: { isActive: false },
+    // Elimina historial de asignaciones para permitir borrado fisico del area.
+    await tx.employeeAreaAssignment.deleteMany({
+      where: { areaId },
+    });
+
+    await tx.area.delete({
+      where: { id: areaId },
+    });
   });
 
-  return { id: areaId, mode: "archived" };
+  return { id: areaId, mode: "deleted" };
 };
