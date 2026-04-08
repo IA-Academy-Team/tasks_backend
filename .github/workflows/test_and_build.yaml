@@ -53,10 +53,10 @@ jobs:
         run: npx prisma generate
 
       - name: Sync schema
-        run: npx prisma db push --accept-data-loss --force-reset --skip-generate
+        run: npx prisma db push --accept-data-loss --force-reset
 
       - name: Seed database
-        run: npm run prisma:migrate:seed
+        run: npm run db:seed
 
       - name: Type-check
         run: npm run type-check
