@@ -329,6 +329,7 @@ export const updateEmployee = async (
 
   const data: {
     name?: string;
+    email?: string;
     phoneNumber?: string | null;
     image?: string | null;
     emailVerified?: boolean;
@@ -336,6 +337,10 @@ export const updateEmployee = async (
 
   if (payload.name !== undefined) {
     data.name = payload.name;
+  }
+
+  if (payload.email !== undefined) {
+    data.email = payload.email;
   }
 
   if (payload.phoneNumber !== undefined) {
@@ -355,30 +360,12 @@ export const updateEmployee = async (
       await tx.user.update({
         where: { id: employee.userId },
         data,
-      });
-    }
+      }).catch((error) => {
+        if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
+          throw new AppError(409, "EMAIL_ALREADY_EXISTS", "Email is already in use");
+        }
 
-    if (payload.password !== undefined) {
-      const hashedPassword = await bcrypt.hash(payload.password, 10);
-
-      await tx.account.upsert({
-        where: {
-          providerId_providerAccountId: {
-            providerId: "credential",
-            providerAccountId: String(employee.userId),
-          },
-        },
-        update: {
-          password: hashedPassword,
-          scope: "app",
-        },
-        create: {
-          userId: employee.userId,
-          providerId: "credential",
-          providerAccountId: String(employee.userId),
-          scope: "app",
-          password: hashedPassword,
-        },
+        throw error;
       });
     }
   });
@@ -400,62 +387,43 @@ export const deleteEmployee = async (
     );
   }
 
-  const [activeAreaAssignmentCount, activeProjectMembershipCount] = await Promise.all([
-    prisma.employeeAreaAssignment.count({
-      where: {
-        employeeId,
-        endedAt: null,
-      },
-    }),
-    prisma.projectMembership.count({
-      where: {
-        employeeId,
-        unassignedAt: null,
-      },
-    }),
-  ]);
-
-  if (activeAreaAssignmentCount > 0 || activeProjectMembershipCount > 0) {
-    throw new AppError(
-      409,
-      "EMPLOYEE_HAS_ACTIVE_DEPENDENCIES",
-      "Employee has active area assignments or project memberships",
-      {
-        activeAreaAssignmentCount,
-        activeProjectMembershipCount,
-      },
-    );
-  }
-
-  const [totalAreaAssignmentCount, totalProjectMembershipCount] = await Promise.all([
-    prisma.employeeAreaAssignment.count({
+  await prisma.$transaction(async (tx) => {
+    const memberships = await tx.projectMembership.findMany({
       where: { employeeId },
-    }),
-    prisma.projectMembership.count({
-      where: { employeeId },
-    }),
-  ]);
+      select: { id: true },
+    });
+    const membershipIds = memberships.map((membership) => membership.id);
 
-  if (totalAreaAssignmentCount > 0 || totalProjectMembershipCount > 0) {
-    throw new AppError(
-      409,
-      "EMPLOYEE_HAS_HISTORICAL_DEPENDENCIES",
-      "Employee has historical area assignments or project memberships and cannot be deleted",
-      {
-        totalAreaAssignmentCount,
-        totalProjectMembershipCount,
+    await tx.task.deleteMany({
+      where: {
+        OR: [
+          { createdByUserId: employee.userId },
+          { assigneeEmployeeId: employeeId },
+          membershipIds.length > 0 ? { assigneeMembershipId: { in: membershipIds } } : undefined,
+        ].filter(Boolean) as Array<
+          | { createdByUserId: number }
+          | { assigneeEmployeeId: number }
+          | { assigneeMembershipId: { in: number[] } }
+        >,
       },
-    );
-  }
+    });
 
-  await prisma.$transaction([
-    prisma.employee.delete({
+    await tx.employeeAreaAssignment.deleteMany({
+      where: { employeeId },
+    });
+
+    await tx.projectMembership.deleteMany({
+      where: { employeeId },
+    });
+
+    await tx.employee.delete({
       where: { id: employeeId },
-    }),
-    prisma.user.delete({
+    });
+
+    await tx.user.delete({
       where: { id: employee.userId },
-    }),
-  ]);
+    });
+  });
 
   return {
     id: employeeId,

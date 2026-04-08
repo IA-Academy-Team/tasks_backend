@@ -7,11 +7,6 @@ const roles = [
   { id: 2, name: "employee" },
 ];
 
-const employeeStatuses = [
-  { id: 1, name: "Activo" },
-  { id: 2, name: "Inactivo" },
-];
-
 const projectStatuses = [
   { id: 1, name: "Activo" },
   { id: 2, name: "Cerrado" },
@@ -180,11 +175,6 @@ async function getRoleIdByName(name: string) {
   return role.id;
 }
 
-async function getEmployeeStatusIdByName(name: string) {
-  const status = await prisma.employeeStatus.findFirstOrThrow({ where: { name } });
-  return status.id;
-}
-
 async function getProjectStatusIdByName(name: string) {
   const status = await prisma.projectStatus.findFirstOrThrow({ where: { name } });
   return status.id;
@@ -295,19 +285,12 @@ async function ensureVerification(identifier: string, value: string, expiresInDa
   });
 }
 
-async function ensureEmployee(userId: number, statusName: string, deactivatedAt?: Date | null) {
-  const employeeStatusId = await getEmployeeStatusIdByName(statusName);
-
+async function ensureEmployee(userId: number) {
   return prisma.employee.upsert({
     where: { userId },
-    update: {
-      employeeStatusId,
-      deactivatedAt: deactivatedAt ?? null,
-    },
+    update: {},
     create: {
       userId,
-      employeeStatusId,
-      deactivatedAt: deactivatedAt ?? null,
     },
   });
 }
@@ -624,14 +607,6 @@ async function main() {
     }),
   );
 
-  await upsertCatalog(employeeStatuses, (status) =>
-    prisma.employeeStatus.upsert({
-      where: { id: status.id },
-      update: { name: status.name },
-      create: status,
-    }),
-  );
-
   await upsertCatalog(projectStatuses, (status) =>
     prisma.projectStatus.upsert({
       where: { id: status.id },
@@ -724,9 +699,7 @@ async function main() {
     const user = users.get(seed.email);
     if (!user) continue;
 
-    const statusName = seed.isActive ? "Activo" : "Inactivo";
-    const deactivatedAt = seed.isActive ? null : daysAgo(15 + (seed.email.length % 45));
-    employees.set(seed.email, await ensureEmployee(user.id, statusName, deactivatedAt));
+    employees.set(seed.email, await ensureEmployee(user.id));
   }
 
   const areas = new Map<string, Awaited<ReturnType<typeof ensureArea>>>();

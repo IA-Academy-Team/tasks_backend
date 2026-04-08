@@ -13,9 +13,7 @@ const imageUrlSchema = nullableTrimmedString
     message: "image must contain at most 2000 characters",
   });
 
-export const employeesListQuerySchema = z.object({
-  status: z.enum(["all", "active", "inactive"]).optional().default("all"),
-});
+export const employeesListQuerySchema = z.object({});
 
 export const employeeIdParamsSchema = z.object({
   employeeId: z.coerce.number().int().positive(),
@@ -36,7 +34,7 @@ export const createEmployeeSchema = z.object({
 
 export const updateEmployeeSchema = z.object({
   name: z.string().trim().min(2).max(150).optional(),
-  password: z.string().trim().min(8).max(72).optional(),
+  email: z.string().trim().toLowerCase().email().max(320).optional(),
   phoneNumber: nullableTrimmedString
     .refine((value) => value === null || value.length <= 30, {
       message: "phoneNumber must contain at most 30 characters",

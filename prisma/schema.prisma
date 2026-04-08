@@ -16,15 +16,6 @@ model Role {
   @@map("roles")
 }
 
-model EmployeeStatus {
-  id   Int    @id @default(autoincrement())
-  name String @db.VarChar(50)
-
-  employees Employee[]
-
-  @@map("employee_statuses")
-}
-
 model ProjectStatus {
   id   Int    @id @default(autoincrement())
   name String @db.VarChar(50)
@@ -173,20 +164,16 @@ model Verification {
 }
 
 model Employee {
-  id               Int       @id @default(autoincrement())
-  userId           Int       @unique(map: "uq_employees_user_id") @map("user_id")
-  employeeStatusId Int       @default(1) @map("employee_status_id")
-  deactivatedAt    DateTime? @map("deactivated_at") @db.Timestamptz(6)
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique(map: "uq_employees_user_id") @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user               User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
-  status             EmployeeStatus           @relation(fields: [employeeStatusId], references: [id], onDelete: Restrict)
   areaAssignments    EmployeeAreaAssignment[]
   projectMemberships ProjectMembership[]
   standaloneTasks    Task[]                   @relation("TaskAssigneeEmployee")
 
-  @@index([employeeStatusId], map: "idx_employees_employee_status_id")
   @@map("employees")
 }
 

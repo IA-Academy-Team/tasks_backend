@@ -41,11 +41,6 @@ CREATE TABLE roles (
     name VARCHAR(50) NOT NULL UNIQUE
 );
 
-CREATE TABLE employee_statuses (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(50) NOT NULL
-);
-
 CREATE TABLE project_statuses (
     id SERIAL PRIMARY KEY,
     name VARCHAR(50) NOT NULL
@@ -161,15 +156,10 @@ CREATE TABLE verifications (
 CREATE TABLE employees (
     id SERIAL PRIMARY KEY,
     user_id INT NOT NULL,
-    employee_status_id INT NOT NULL DEFAULT 1,
-    deactivated_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_employees_user
         FOREIGN KEY (user_id) REFERENCES users (id)
-        ON DELETE RESTRICT,
-    CONSTRAINT fk_employees_status
-        FOREIGN KEY (employee_status_id) REFERENCES employee_statuses (id)
         ON DELETE RESTRICT,
     CONSTRAINT uq_employees_user_id UNIQUE (user_id)
 );
@@ -393,9 +383,6 @@ CREATE INDEX idx_verifications_identifier
 CREATE INDEX idx_verifications_expires_at
     ON verifications (expires_at);
 
-CREATE INDEX idx_employees_employee_status_id
-    ON employees (employee_status_id);
-
 CREATE INDEX idx_areas_is_active
     ON areas (is_active);
 
@@ -465,12 +452,6 @@ VALUES
     (2, 'employee')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO employee_statuses (id, name)
-VALUES
-    (1,'Activo'),
-    (2, 'Inactivo')
-ON CONFLICT (id) DO NOTHING;
-
 INSERT INTO project_statuses (id, name)
 VALUES
     (1, 'Activo'),
@@ -516,15 +497,6 @@ VALUES
         '+573001000001',
         1,
         TRUE
-    ),
-    (
-        'Sofia QA',
-        'sofia.qa@taskapp.local',
-        TRUE,
-        'https://example.com/avatar/sofia.png',
-        '+573001000004',
-        2,
-        TRUE
     )
 ON CONFLICT (email) DO UPDATE
 SET
@@ -534,25 +506,6 @@ SET
     phone_number = EXCLUDED.phone_number,
     role_id = EXCLUDED.role_id,
     is_active = EXCLUDED.is_active,
-    updated_at = CURRENT_TIMESTAMP;
-
-INSERT INTO employees (
-    user_id,
-    employee_status_id,
-    deactivated_at
-)
-SELECT
-    u.id,
-    1 AS employee_status_id,
-    NULL AS deactivated_at
-FROM users u
-WHERE u.email IN (
-    'sofia.qa@taskapp.local'
-)
-ON CONFLICT (user_id) DO UPDATE
-SET
-    employee_status_id = EXCLUDED.employee_status_id,
-    deactivated_at = EXCLUDED.deactivated_at,
     updated_at = CURRENT_TIMESTAMP;
 
 INSERT INTO accounts (
@@ -580,13 +533,6 @@ JOIN (
             '',
             'app',
             '$2b$10$xbnUVyxCRo3b.8cTZTOw6.YjWCEk1cEFNBSP2WHvnwbDM0Q5giCH.'
-        ),
-        (
-            'sofia.qa@taskapp.local',
-            'credential',
-            '',
-            'app',
-            '$2b$10$lRn4OXVVr2OCbHHwEwpg/uBeBarmic.bgNOto.SlbYPuYGvDE4Zeq'
         )
 ) AS account_seed(email, provider_id, provider_account_id, scope, password)
     ON account_seed.email = u.email
@@ -613,8 +559,7 @@ SELECT
 FROM users u
 JOIN (
     VALUES
-        ('admin@taskapp.local', 'sess-admin-principal', INTERVAL '30 days', 'Seeder Admin Agent'),
-        ('sofia.qa@taskapp.local', 'sess-sofia-qa', INTERVAL '7 days', 'Seeder QA Client')
+        ('admin@taskapp.local', 'sess-admin-principal', INTERVAL '30 days', 'Seeder Admin Agent')
 ) AS session_seed(email, token, expires_in, user_agent)
     ON session_seed.email = u.email
 ON CONFLICT (token) DO UPDATE
@@ -647,7 +592,6 @@ SET
     updated_at = CURRENT_TIMESTAMP;
 
 SELECT setval(pg_get_serial_sequence('roles', 'id'), COALESCE((SELECT MAX(id) FROM roles), 1), TRUE);
-SELECT setval(pg_get_serial_sequence('employee_statuses', 'id'), COALESCE((SELECT MAX(id) FROM employee_statuses), 1), TRUE);
 SELECT setval(pg_get_serial_sequence('project_statuses', 'id'), COALESCE((SELECT MAX(id) FROM project_statuses), 1), TRUE);
 SELECT setval(pg_get_serial_sequence('task_statuses', 'id'), COALESCE((SELECT MAX(id) FROM task_statuses), 1), TRUE);
 SELECT setval(pg_get_serial_sequence('task_priorities', 'id'), COALESCE((SELECT MAX(id) FROM task_priorities), 1), TRUE);
