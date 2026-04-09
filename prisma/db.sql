@@ -1,37 +1,10 @@
--- Database: taskapp
-select * from status;
-select * from role;
-select * from company;
-select * from type_recipient;
-select * from type_expense;
-select * from type_payment;
-select * from type_account;
-select * from bank;
-select * from type_document;
-select * from policy;
-select * from holyday;
-select * from country;
-select * from business;
-select * from city;
-select * from cost_center;
-select * from user;
-select * from provider;
-select * from recipient;
-select * from advance;
-select * from legalization;
-select * from concept;
-select * from document;
-select * from rut;
-select * from document_provider;
-select * from notification;
-select * from audit;
-
--- DDL: Crear base de datos y tablas
-
--- DROP DATABASE taskapp_dev;
-CREATE DATABASE taskapp_dev;
-\c taskapp_dev;
-\dt;
+-- Database: taskapp_db
+-- DDL: crear base de datos y tablas (script para psql)
+\set ON_ERROR_STOP on
+\c postgres
+DROP DATABASE IF EXISTS task;
+CREATE DATABASE task;
+\c task;
 
 -- ==============================
 -- Tablas sin dependencias
@@ -491,7 +464,7 @@ INSERT INTO users (
 VALUES
     (
         'Admin Principal',
-        'admin@taskapp.local',
+        'alexandra.villamizar@campuslands.com',
         TRUE,
         'https://example.com/avatar/admin-principal.png',
         '+573001000001',
@@ -528,7 +501,7 @@ FROM users u
 JOIN (
     VALUES
         (
-            'admin@taskapp.local',
+            'alexandra.villamizar@campuslands.com',
             'credential',
             '',
             'app',
@@ -559,7 +532,7 @@ SELECT
 FROM users u
 JOIN (
     VALUES
-        ('admin@taskapp.local', 'sess-admin-principal', INTERVAL '30 days', 'Seeder Admin Agent')
+        ('alexandra.villamizar@campuslands.com', 'sess-admin-principal', INTERVAL '30 days', 'Seeder Admin Agent')
 ) AS session_seed(email, token, expires_in, user_agent)
     ON session_seed.email = u.email
 ON CONFLICT (token) DO UPDATE
@@ -570,22 +543,29 @@ SET
     user_agent = EXCLUDED.user_agent,
     updated_at = CURRENT_TIMESTAMP;
 
+WITH verification_seed(identifier, value, expires_at) AS (
+    VALUES
+        (
+            'alexandra.villamizar@campuslands.com',
+            'verify-admin-email',
+            CURRENT_TIMESTAMP + INTERVAL '2 days'
+        ),
+        (
+            'reset:alexandra.villamizar@campuslands.com',
+            'reset-admin-password',
+            CURRENT_TIMESTAMP + INTERVAL '1 day'
+        )
+)
 INSERT INTO verifications (
     identifier,
     value,
     expires_at
 )
-VALUES
-    (
-        'admin@taskapp.local',
-        'verify-admin-email',
-        CURRENT_TIMESTAMP + INTERVAL '2 days'
-    ),
-    (
-        'admin@taskapp.local',
-        'verify-admin-email',
-        CURRENT_TIMESTAMP + INTERVAL '2 days'
-    )
+SELECT DISTINCT ON (identifier, value)
+    identifier,
+    value,
+    expires_at
+FROM verification_seed
 ON CONFLICT (identifier, value) DO UPDATE
 SET
     expires_at = EXCLUDED.expires_at,
@@ -601,3 +581,5 @@ SELECT setval(pg_get_serial_sequence('employees', 'id'), COALESCE((SELECT MAX(id
 SELECT setval(pg_get_serial_sequence('accounts', 'id'), COALESCE((SELECT MAX(id) FROM accounts), 1), TRUE);
 SELECT setval(pg_get_serial_sequence('sessions', 'id'), COALESCE((SELECT MAX(id) FROM sessions), 1), TRUE);
 SELECT setval(pg_get_serial_sequence('verifications', 'id'), COALESCE((SELECT MAX(id) FROM verifications), 1), TRUE);
+
+\dt;
