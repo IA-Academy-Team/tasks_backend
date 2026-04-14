@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "../../../generated/prisma/client.js";
 import prisma from "../../../prisma/prisma.client.js";
 import { AppError } from "../../shared/http/app-error.js";
 import { createNotificationRecord } from "../notifications/notifications.service.js";
+import { emitRealtimeEvent } from "../notifications/notifications.socket.js";
 import type {
   AssignProjectMembershipInput,
   CreateProjectInput,
@@ -463,7 +464,18 @@ export const createProject = async (payload: CreateProjectInput): Promise<Projec
     throw error;
   });
 
-  return getProjectById(project.id);
+  const created = await getProjectById(project.id);
+  emitRealtimeEvent("project:created", {
+    project: created,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  emitRealtimeEvent("analytics:updated", {
+    entity: "project",
+    action: "created",
+    projectId: created.id,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  return created;
 };
 
 export const updateProject = async (
@@ -535,7 +547,18 @@ export const updateProject = async (
     throw error;
   });
 
-  return getProjectById(projectId);
+  const updated = await getProjectById(projectId);
+  emitRealtimeEvent("project:updated", {
+    project: updated,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  emitRealtimeEvent("analytics:updated", {
+    entity: "project",
+    action: "updated",
+    projectId: updated.id,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  return updated;
 };
 
 export const updateProjectStatus = async (
@@ -571,7 +594,18 @@ export const updateProjectStatus = async (
     select: { id: true },
   });
 
-  return getProjectById(projectId);
+  const updated = await getProjectById(projectId);
+  emitRealtimeEvent("project:updated", {
+    project: updated,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  emitRealtimeEvent("analytics:updated", {
+    entity: "project",
+    action: "status_updated",
+    projectId: updated.id,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  return updated;
 };
 
 export const deleteProject = async (
@@ -592,7 +626,19 @@ export const deleteProject = async (
     });
   });
 
-  return { id: projectId, mode: "deleted" };
+  const result = { id: projectId, mode: "deleted" } as const;
+  emitRealtimeEvent("project:deleted", {
+    projectId,
+    mode: result.mode,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  emitRealtimeEvent("analytics:updated", {
+    entity: "project",
+    action: "deleted",
+    projectId,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  return result;
 };
 
 export const listProjectMemberships = async (
@@ -724,7 +770,20 @@ export const assignProjectMembership = async (
     throw error;
   });
 
-  return mapProjectMembership(membership);
+  const created = mapProjectMembership(membership);
+  emitRealtimeEvent("project:updated", {
+    projectId,
+    change: "membership_assigned",
+    membership: created,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  emitRealtimeEvent("analytics:updated", {
+    entity: "project",
+    action: "membership_assigned",
+    projectId,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  return created;
 };
 
 export const unassignProjectMembership = async (
@@ -744,7 +803,20 @@ export const unassignProjectMembership = async (
     });
 
     const hydratedMembership = await getProjectMembershipOrThrow(projectId, updatedMembership.id);
-    return mapProjectMembership(hydratedMembership);
+    const updated = mapProjectMembership(hydratedMembership);
+    emitRealtimeEvent("project:updated", {
+      projectId,
+      change: "membership_unassigned",
+      membership: updated,
+      issuedAt: new Date().toISOString(),
+    }, "admin");
+    emitRealtimeEvent("analytics:updated", {
+      entity: "project",
+      action: "membership_unassigned",
+      projectId,
+      issuedAt: new Date().toISOString(),
+    }, "admin");
+    return updated;
   }
 
   return mapProjectMembership(membership);

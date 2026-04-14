@@ -36,6 +36,7 @@ export interface NotificationsReadAllRealtimeEvent {
 let notificationsSocketServer: Server | null = null;
 
 const getUserNotificationsRoom = (userId: number) => `notifications:user:${userId}`;
+const getRoleRoom = (role: CurrentAuthSession["user"]["role"]) => `role:${role}`;
 
 const getHandshakeToken = (socket: Socket): string | null => {
   const authPayload = socket.handshake.auth as NotificationsSocketAuth | undefined;
@@ -95,6 +96,7 @@ export const initNotificationsSocketServer = (server: HttpServer): Server => {
     }
 
     socket.join(getUserNotificationsRoom(session.user.id));
+    socket.join(getRoleRoom(session.user.role));
   });
 
   return notificationsSocketServer;
@@ -111,6 +113,9 @@ export const emitNotificationCreatedRealtime = (
   notificationsSocketServer
     .to(getUserNotificationsRoom(userId))
     .emit("notifications:new", payload);
+  notificationsSocketServer
+    .to(getUserNotificationsRoom(userId))
+    .emit("notification:created", payload);
 };
 
 export const emitNotificationReadRealtime = (
@@ -124,6 +129,9 @@ export const emitNotificationReadRealtime = (
   notificationsSocketServer
     .to(getUserNotificationsRoom(userId))
     .emit("notifications:read", payload);
+  notificationsSocketServer
+    .to(getUserNotificationsRoom(userId))
+    .emit("notification:updated", payload);
 };
 
 export const emitNotificationsReadAllRealtime = (
@@ -137,4 +145,26 @@ export const emitNotificationsReadAllRealtime = (
   notificationsSocketServer
     .to(getUserNotificationsRoom(userId))
     .emit("notifications:read-all", payload);
+  notificationsSocketServer
+    .to(getUserNotificationsRoom(userId))
+    .emit("notification:updated", payload);
+};
+
+export type RealtimeAudience = "all" | "admin" | "employee";
+
+export const emitRealtimeEvent = (
+  eventName: string,
+  payload: Record<string, unknown>,
+  audience: RealtimeAudience = "all",
+) => {
+  if (!notificationsSocketServer) {
+    return;
+  }
+
+  if (audience === "all") {
+    notificationsSocketServer.emit(eventName, payload);
+    return;
+  }
+
+  notificationsSocketServer.to(getRoleRoom(audience)).emit(eventName, payload);
 };

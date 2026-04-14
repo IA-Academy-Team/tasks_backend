@@ -2,6 +2,7 @@ import type { Prisma } from "../../../generated/prisma/client.js";
 import prisma from "../../../prisma/prisma.client.js";
 import { AppError } from "../../shared/http/app-error.js";
 import type { AuthRole } from "../auth/auth.policies.js";
+import { emitRealtimeEvent } from "../notifications/notifications.socket.js";
 import { createNotificationRecord } from "../notifications/notifications.service.js";
 import type {
   CreateStandaloneTaskInput,
@@ -967,6 +968,19 @@ export const createTask = async (
   }
 
   const primaryTask = await getTaskById(primaryTaskId);
+  emitRealtimeEvent("task:created", {
+    task: primaryTask,
+    createdCount: createdTaskIds.length,
+    createdTaskIds,
+    issuedAt: new Date().toISOString(),
+  });
+  emitRealtimeEvent("analytics:updated", {
+    entity: "task",
+    action: "created",
+    taskId: primaryTask.id,
+    projectId: primaryTask.projectId,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
   return {
     task: primaryTask,
     createdCount: createdTaskIds.length,
@@ -1054,6 +1068,19 @@ export const createStandaloneTask = async (
   }
 
   const primaryTask = await getTaskById(primaryTaskId);
+  emitRealtimeEvent("task:created", {
+    task: primaryTask,
+    createdCount: createdTaskIds.length,
+    createdTaskIds,
+    issuedAt: new Date().toISOString(),
+  });
+  emitRealtimeEvent("analytics:updated", {
+    entity: "task",
+    action: "created",
+    taskId: primaryTask.id,
+    projectId: primaryTask.projectId,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
   return {
     task: primaryTask,
     createdCount: createdTaskIds.length,
@@ -1176,7 +1203,19 @@ export const updateTask = async (
     }
   }
 
-  return getTaskById(taskId);
+  const updatedTask = await getTaskById(taskId);
+  emitRealtimeEvent("task:updated", {
+    task: updatedTask,
+    issuedAt: new Date().toISOString(),
+  });
+  emitRealtimeEvent("analytics:updated", {
+    entity: "task",
+    action: "updated",
+    taskId: updatedTask.id,
+    projectId: updatedTask.projectId,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  return updatedTask;
 };
 
 export const transitionTaskStatus = async (
@@ -1324,6 +1363,21 @@ export const transitionTaskStatus = async (
   });
 
   const updatedTask = await getTaskById(taskId);
+  emitRealtimeEvent("task:updated", {
+    task: updatedTask,
+    transition: {
+      fromStatus: task.status.name,
+      toStatus: targetStatus.name,
+    },
+    issuedAt: new Date().toISOString(),
+  });
+  emitRealtimeEvent("analytics:updated", {
+    entity: "task",
+    action: "status_transition",
+    taskId: updatedTask.id,
+    projectId: updatedTask.projectId,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
   return {
     task: updatedTask,
     transition: {
@@ -1393,8 +1447,21 @@ export const deleteTask = async (taskId: number): Promise<DeleteTaskResult> => {
     data: { deletedAt },
   });
 
-  return {
+  const result = {
     id: taskId,
     deletedAt: deletedAt.toISOString(),
   };
+  emitRealtimeEvent("task:deleted", {
+    taskId,
+    deletedAt: result.deletedAt,
+    issuedAt: new Date().toISOString(),
+  });
+  emitRealtimeEvent("analytics:updated", {
+    entity: "task",
+    action: "deleted",
+    taskId,
+    projectId: existingTask.projectId ?? 0,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  return result;
 };
