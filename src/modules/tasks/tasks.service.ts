@@ -41,6 +41,7 @@ interface TaskRecord {
   estimatedMinutes: number | null;
   reportedActualMinutes: number | null;
   completionEvidence: string | null;
+  completionEvidenceLink: string | null;
   deletedAt: Date | null;
   createdByUserId: number;
   createdAt: Date;
@@ -94,6 +95,7 @@ export interface TaskDto {
   estimatedMinutes: number | null;
   reportedActualMinutes: number | null;
   completionEvidence: string | null;
+  completionEvidenceLink: string | null;
   actualMinutes: number;
   deviationMinutes: number | null;
   isEstimateDelayed: boolean | null;
@@ -318,6 +320,7 @@ const mapTask = (task: TaskRecord, now: Date): TaskDto => {
     estimatedMinutes: task.estimatedMinutes ?? null,
     reportedActualMinutes: task.reportedActualMinutes ?? null,
     completionEvidence: task.completionEvidence ?? null,
+    completionEvidenceLink: task.completionEvidenceLink ?? null,
     actualMinutes: metrics.actualMinutes,
     deviationMinutes: metrics.deviationMinutes,
     isEstimateDelayed: metrics.isEstimateDelayed,
@@ -1264,6 +1267,7 @@ export const transitionTaskStatus = async (
   const targetStatus = statusCatalog[payload.toStatus];
   const updatedAt = new Date();
   const completionEvidence = payload.completionEvidence ?? null;
+  const completionEvidenceLink = payload.completionEvidenceLink ?? null;
   const reportedActualMinutes = payload.actualMinutes ?? null;
 
   if (payload.toStatus === "done" && reportedActualMinutes === null) {
@@ -1343,6 +1347,7 @@ export const transitionTaskStatus = async (
     if (payload.toStatus === "done") {
       taskUpdateData.reportedActualMinutes = reportedActualMinutes;
       taskUpdateData.completionEvidence = completionEvidence;
+      taskUpdateData.completionEvidenceLink = completionEvidenceLink;
     }
 
     await tx.task.update({

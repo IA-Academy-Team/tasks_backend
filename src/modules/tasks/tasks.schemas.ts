@@ -5,6 +5,14 @@ const nullableTrimmedString = z.preprocess(
   z.union([z.string().trim(), z.null()]),
 );
 
+const nullableTrimmedHttpUrl = nullableTrimmedString
+  .refine((value) => value === null || /^https?:\/\//i.test(value), {
+    message: "completionEvidenceLink must be a valid http/https url",
+  })
+  .refine((value) => value === null || value.length <= 2000, {
+    message: "completionEvidenceLink must contain at most 2000 characters",
+  });
+
 const queryBoolean = z.preprocess((value) => {
   if (typeof value === "string") {
     const normalized = value.trim().toLowerCase();
@@ -112,6 +120,7 @@ export const transitionTaskStatusSchema = z.object({
       message: "completionEvidence must contain at most 5000 characters",
     })
     .optional(),
+  completionEvidenceLink: nullableTrimmedHttpUrl.optional(),
   notes: nullableTrimmedString
     .refine((value) => value === null || value.length <= 1000, {
       message: "notes must contain at most 1000 characters",
