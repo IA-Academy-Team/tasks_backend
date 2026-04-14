@@ -235,6 +235,7 @@ CREATE TABLE tasks (
     estimated_minutes INTEGER, 
     reported_actual_minutes INTEGER,
     completion_evidence TEXT,
+    completion_evidence_link TEXT,
     deleted_at TIMESTAMPTZ,
     created_by_user_id INT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
