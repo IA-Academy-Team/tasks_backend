@@ -5,12 +5,28 @@ const nullableTrimmedString = z.preprocess(
   z.union([z.string().trim(), z.null()]),
 );
 
+const isHttpUrl = (value: string) => /^https?:\/\//i.test(value);
+const isBase64ImageDataUrl = (value: string) =>
+  /^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=\r\n]+$/i.test(value);
+const isSupportedImageValue = (value: string) => isHttpUrl(value) || isBase64ImageDataUrl(value);
+const imageLengthIsValid = (value: string) => {
+  if (isHttpUrl(value)) {
+    return value.length <= 2000;
+  }
+
+  if (isBase64ImageDataUrl(value)) {
+    return value.length <= 120_000;
+  }
+
+  return false;
+};
+
 const imageUrlSchema = nullableTrimmedString
-  .refine((value) => value === null || /^https?:\/\//i.test(value), {
-    message: "image must be a valid http/https url",
+  .refine((value) => value === null || isSupportedImageValue(value), {
+    message: "image must be a valid http/https url or data:image/...;base64 value",
   })
-  .refine((value) => value === null || value.length <= 2000, {
-    message: "image must contain at most 2000 characters",
+  .refine((value) => value === null || imageLengthIsValid(value), {
+    message: "image is too long",
   });
 
 export const employeesListQuerySchema = z.object({});
