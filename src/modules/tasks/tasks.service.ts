@@ -22,7 +22,7 @@ const TASK_STATUS_NAMES = {
 type WorkflowStatus = keyof typeof TASK_STATUS_NAMES;
 
 const WORKFLOW_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
-  assigned: ["in_progress"],
+  assigned: ["in_progress", "done"],
   in_progress: ["done"],
   done: [],
 };
