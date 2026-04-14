@@ -559,7 +559,7 @@ export const getEmployeeDashboard = async (authUserId: number): Promise<Employee
       status: item.task.status.name,
       priority: item.task.priority.name,
       projectId: item.task.project?.id ?? 0,
-      projectName: item.task.project?.name ?? "Tarea suelta",
+      projectName: item.task.project?.name ?? "Tarea independiente",
       dueDate: toIsoDate(item.task.dueDate),
       estimatedMinutes: item.task.estimatedMinutes ?? null,
       actualMinutes: item.metrics.actualMinutes,
@@ -632,7 +632,7 @@ export const getAdminDashboard = async (query: AdminDashboardQuery): Promise<Adm
     }
 
     const projectId = item.task.project?.id ?? 0;
-    const projectName = item.task.project?.name ?? "Tareas sueltas";
+    const projectName = item.task.project?.name ?? "Tareas independientes";
     const existingProject = projectMap.get(projectId);
     if (existingProject) {
       existingProject.tasks.push(item);
@@ -708,7 +708,7 @@ export const getTaskComplianceReport = async (
       taskId: task.id,
       title: task.title,
       projectId: task.project?.id ?? 0,
-      projectName: task.project?.name ?? "Tarea suelta",
+      projectName: task.project?.name ?? "Tarea independiente",
       areaId: task.project?.area?.id ?? 0,
       areaName: task.project?.area?.name ?? "Sin area",
       assigneeEmployeeId: task.assigneeMembership?.employee.id ?? task.assigneeEmployee?.id ?? null,
@@ -818,7 +818,7 @@ export const getOverdueAlerts = async (query: OverdueAlertsQuery): Promise<Overd
       taskId: task.id,
       title: task.title,
       projectId: task.project?.id ?? 0,
-      projectName: task.project?.name ?? "Tarea suelta",
+      projectName: task.project?.name ?? "Tarea independiente",
       areaId: task.project?.area?.id ?? 0,
       areaName: task.project?.area?.name ?? "Sin area",
       assigneeName: task.assigneeMembership?.employee.user.name ?? task.assigneeEmployee?.user.name ?? null,

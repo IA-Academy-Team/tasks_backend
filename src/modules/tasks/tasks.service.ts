@@ -308,7 +308,7 @@ const mapTask = (task: TaskRecord, now: Date): TaskDto => {
   return {
     id: task.id,
     projectId: task.projectId ?? 0,
-    projectName: task.project?.name ?? "Tarea suelta",
+    projectName: task.project?.name ?? "Tarea independiente",
     taskStatusId: task.taskStatusId,
     status: task.status.name,
     taskPriorityId: task.taskPriorityId,
@@ -1048,8 +1048,8 @@ export const createStandaloneTask = async (
       await createNotificationRecord({
         userId: assigneeEmployee.user.id,
         typeCode: "task_assignment",
-        title: "Nueva tarea suelta asignada",
-        message: `Te asignaron la tarea suelta \"${payload.title}\".`,
+        title: "Nueva tarea independiente asignada",
+        message: `Te asignaron la tarea independiente \"${payload.title}\".`,
         resourceType: "task",
         resourceId: task.id,
         metadata: {
@@ -1191,14 +1191,14 @@ export const updateTask = async (
         userId: membership.employee.userId,
         typeCode: "task_assignment",
         title: "Nueva tarea asignada",
-          message: `Te asignaron la tarea \"${payload.title ?? existingTask.title}\" en ${project?.name ?? "tareas sueltas"}.`,
+          message: `Te asignaron la tarea \"${payload.title ?? existingTask.title}\" en ${project?.name ?? "tareas independientes"}.`,
         resourceType: "task",
         resourceId: taskId,
         metadata: {
           taskId,
           taskTitle: payload.title ?? existingTask.title,
           projectId: project?.id ?? null,
-          projectName: project?.name ?? "Tarea suelta",
+          projectName: project?.name ?? "Tarea independiente",
           projectMembershipId: membership.id,
           employeeId: membership.employeeId,
         },
