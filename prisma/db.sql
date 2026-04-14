@@ -1,8 +1,6 @@
 -- Database: taskapp_db
 -- DDL: crear base de datos y tablas (script para psql)
-\set ON_ERROR_STOP on
-\c postgres
-DROP DATABASE IF EXISTS task;
+-- DROP DATABASE IF EXISTS task;
 CREATE DATABASE task;
 \c task;
 

@@ -49,8 +49,8 @@ interface AnalyticsTaskRecord {
     area: {
       id: number;
       name: string;
-    };
-  };
+    } | null;
+  } | null;
   assigneeMembership: {
     employee: {
       id: number;
@@ -59,6 +59,14 @@ interface AnalyticsTaskRecord {
         name: string;
         email: string;
       };
+    };
+  } | null;
+  assigneeEmployee: {
+    id: number;
+    user: {
+      id: number;
+      name: string;
+      email: string;
     };
   } | null;
   workSessions: Array<{
@@ -316,33 +324,55 @@ const buildTaskWhereClausesFromFilters = (
 ): Prisma.TaskWhereInput[] => {
   const whereClauses: Prisma.TaskWhereInput[] = [
     { deletedAt: null },
-    { projectId: { not: null } },
-    {
+  ];
+
+  if (filters.projectId !== undefined) {
+    whereClauses.push({ projectId: filters.projectId });
+    whereClauses.push({
       project: {
         status: {
           name: "Activo",
         },
       },
-    },
-  ];
-
-  if (filters.projectId !== undefined) {
-    whereClauses.push({ projectId: filters.projectId });
+    });
+  } else {
+    whereClauses.push({
+      OR: [
+        { projectId: null },
+        {
+          project: {
+            status: {
+              name: "Activo",
+            },
+          },
+        },
+      ],
+    });
   }
 
   if (filters.areaId !== undefined) {
     whereClauses.push({
       project: {
         areaId: filters.areaId,
+        status: {
+          name: "Activo",
+        },
       },
     });
   }
 
   if (filters.employeeId !== undefined) {
     whereClauses.push({
-      assigneeMembership: {
-        employeeId: filters.employeeId,
-      },
+      OR: [
+        {
+          assigneeMembership: {
+            employeeId: filters.employeeId,
+          },
+        },
+        {
+          assigneeEmployeeId: filters.employeeId,
+        },
+      ],
     });
   }
 
@@ -427,6 +457,18 @@ const analyticsTaskInclude = {
               email: true,
             },
           },
+        },
+      },
+    },
+  },
+  assigneeEmployee: {
+    select: {
+      id: true,
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
         },
       },
     },
@@ -573,7 +615,7 @@ export const getAdminDashboard = async (query: AdminDashboardQuery): Promise<Adm
   }>();
 
   for (const item of tasksWithMetrics) {
-    const assigneeEmployee = item.task.assigneeMembership?.employee;
+    const assigneeEmployee = item.task.assigneeMembership?.employee ?? item.task.assigneeEmployee;
     if (assigneeEmployee) {
       const existing = employeeMap.get(assigneeEmployee.id);
       if (existing) {
@@ -589,14 +631,15 @@ export const getAdminDashboard = async (query: AdminDashboardQuery): Promise<Adm
       }
     }
 
-    const projectId = item.task.project.id;
+    const projectId = item.task.project?.id ?? 0;
+    const projectName = item.task.project?.name ?? "Tareas sueltas";
     const existingProject = projectMap.get(projectId);
     if (existingProject) {
       existingProject.tasks.push(item);
     } else {
       projectMap.set(projectId, {
         projectId,
-        projectName: item.task.project.name,
+        projectName,
         tasks: [item],
       });
     }
@@ -664,13 +707,13 @@ export const getTaskComplianceReport = async (
     return {
       taskId: task.id,
       title: task.title,
-      projectId: task.project.id,
-      projectName: task.project.name,
-      areaId: task.project.area?.id ?? 0,
-      areaName: task.project.area?.name ?? "Sin area",
-      assigneeEmployeeId: task.assigneeMembership?.employee.id ?? null,
-      assigneeName: task.assigneeMembership?.employee.user.name ?? null,
-      assigneeEmail: task.assigneeMembership?.employee.user.email ?? null,
+      projectId: task.project?.id ?? 0,
+      projectName: task.project?.name ?? "Tarea suelta",
+      areaId: task.project?.area?.id ?? 0,
+      areaName: task.project?.area?.name ?? "Sin area",
+      assigneeEmployeeId: task.assigneeMembership?.employee.id ?? task.assigneeEmployee?.id ?? null,
+      assigneeName: task.assigneeMembership?.employee.user.name ?? task.assigneeEmployee?.user.name ?? null,
+      assigneeEmail: task.assigneeMembership?.employee.user.email ?? task.assigneeEmployee?.user.email ?? null,
       status: task.status.name,
       priority: task.priority.name,
       plannedStartDate: toIsoDate(task.plannedStartDate),
@@ -774,12 +817,12 @@ export const getOverdueAlerts = async (query: OverdueAlertsQuery): Promise<Overd
     return [{
       taskId: task.id,
       title: task.title,
-      projectId: task.project.id,
-      projectName: task.project.name,
-      areaId: task.project.area?.id ?? 0,
-      areaName: task.project.area?.name ?? "Sin area",
-      assigneeName: task.assigneeMembership?.employee.user.name ?? null,
-      assigneeEmail: task.assigneeMembership?.employee.user.email ?? null,
+      projectId: task.project?.id ?? 0,
+      projectName: task.project?.name ?? "Tarea suelta",
+      areaId: task.project?.area?.id ?? 0,
+      areaName: task.project?.area?.name ?? "Sin area",
+      assigneeName: task.assigneeMembership?.employee.user.name ?? task.assigneeEmployee?.user.name ?? null,
+      assigneeEmail: task.assigneeMembership?.employee.user.email ?? task.assigneeEmployee?.user.email ?? null,
       status: task.status.name,
       priority: task.priority.name,
       dueDate: toIsoDate(task.dueDate),
