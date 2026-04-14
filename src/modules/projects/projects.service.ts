@@ -401,6 +401,13 @@ export const listProjects = async (
         unassignedAt: null,
       },
     };
+  } else if (query.employeeId !== undefined) {
+    where.memberships = {
+      some: {
+        employeeId: query.employeeId,
+        unassignedAt: null,
+      },
+    };
   }
 
   const projects = await prisma.project.findMany({
