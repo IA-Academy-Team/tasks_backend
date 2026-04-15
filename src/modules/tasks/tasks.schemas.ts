@@ -29,8 +29,10 @@ const nullablePositiveInt = z.preprocess(
 
 const taskRecurrenceSchema = z.object({
   frequency: z.enum(["daily", "weekly", "monthly", "range_interval"]),
-  every: z.coerce.number().int().positive().max(365).optional().default(1),
+  every: z.coerce.number().int().positive().max(365).optional(),
+  startDate: z.coerce.date().optional(),
   untilDate: z.coerce.date(),
+  weekDays: z.array(z.coerce.number().int().min(0).max(6)).min(1).optional(),
 });
 
 const baseCreateTaskObjectSchema = z.object({
@@ -74,6 +76,13 @@ export const createTaskSchema = baseCreateTaskObjectSchema.refine((payload) => p
 ), {
   message: "recurrence.untilDate must be greater than or equal to dueDate",
   path: ["recurrence", "untilDate"],
+}).refine((payload) => (
+  !payload.recurrence
+  || !payload.recurrence.startDate
+  || payload.recurrence.untilDate >= payload.recurrence.startDate
+), {
+  message: "recurrence.untilDate must be greater than or equal to recurrence.startDate",
+  path: ["recurrence", "startDate"],
 });
 
 export const createStandaloneTaskSchema = baseCreateTaskObjectSchema
@@ -94,6 +103,14 @@ export const createStandaloneTaskSchema = baseCreateTaskObjectSchema
   ), {
     message: "recurrence.untilDate must be greater than or equal to dueDate",
     path: ["recurrence", "untilDate"],
+  })
+  .refine((payload) => (
+    !payload.recurrence
+    || !payload.recurrence.startDate
+    || payload.recurrence.untilDate >= payload.recurrence.startDate
+  ), {
+    message: "recurrence.untilDate must be greater than or equal to recurrence.startDate",
+    path: ["recurrence", "startDate"],
   });
 
 export const updateTaskSchema = z.object({

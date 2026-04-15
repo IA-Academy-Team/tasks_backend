@@ -451,6 +451,22 @@ const addMonthsToDate = (source: Date, months: number): Date => {
   );
 };
 
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+
+const getDateSpanInDays = (startDate: Date, endDate: Date): number => {
+  const diff = toUtcDayNumber(endDate) - toUtcDayNumber(startDate);
+  return Math.max(0, Math.round(diff / DAY_IN_MS));
+};
+
+const getOccurrenceWindow = (startDate: Date, dateSpanInDays: number) => ({
+  plannedStartDate: startDate,
+  dueDate: addDaysToDate(startDate, dateSpanInDays),
+});
+
+const getWeekStartDate = (source: Date): Date => (
+  addDaysToDate(source, -source.getUTCDay())
+);
+
 const buildRecurringTaskSchedule = (
   payload: Pick<CreateTaskInput, "plannedStartDate" | "dueDate" | "recurrence">,
 ): Array<{ plannedStartDate: Date; dueDate: Date }> => {
@@ -461,6 +477,8 @@ const buildRecurringTaskSchedule = (
   const { recurrence } = payload;
   const every = recurrence.every ?? 1;
   const untilDate = recurrence.untilDate;
+  const recurrenceStartDate = recurrence.startDate ?? payload.plannedStartDate;
+  const dateSpanInDays = getDateSpanInDays(payload.plannedStartDate, payload.dueDate);
 
   if (untilDate < payload.dueDate) {
     throw new AppError(
@@ -470,13 +488,23 @@ const buildRecurringTaskSchedule = (
     );
   }
 
-  const schedule: Array<{ plannedStartDate: Date; dueDate: Date }> = [];
-  let plannedStartDate = payload.plannedStartDate;
-  let dueDate = payload.dueDate;
-  const maxOccurrences = 400;
+  if (untilDate < recurrenceStartDate) {
+    throw new AppError(
+      400,
+      "TASK_RECURRENCE_START_DATE_INVALID",
+      "Recurrence start date must be less than or equal to recurrence end date",
+    );
+  }
 
-  while (dueDate <= untilDate) {
-    schedule.push({ plannedStartDate, dueDate });
+  const schedule: Array<{ plannedStartDate: Date; dueDate: Date }> = [];
+  const maxOccurrences = 400;
+  const pushOccurrence = (startDate: Date) => {
+    const occurrence = getOccurrenceWindow(startDate, dateSpanInDays);
+    if (occurrence.dueDate > untilDate) {
+      return false;
+    }
+
+    schedule.push(occurrence);
     if (schedule.length > maxOccurrences) {
       throw new AppError(
         400,
@@ -484,16 +512,52 @@ const buildRecurringTaskSchedule = (
         `Recurrence exceeded the allowed maximum of ${maxOccurrences} tasks`,
       );
     }
+    return true;
+  };
 
-    if (recurrence.frequency === "monthly") {
+  if (recurrence.frequency === "monthly") {
+    let plannedStartDate = recurrenceStartDate;
+    while (plannedStartDate <= untilDate) {
+      const appended = pushOccurrence(plannedStartDate);
+      if (!appended) {
+        break;
+      }
       plannedStartDate = addMonthsToDate(plannedStartDate, every);
-      dueDate = addMonthsToDate(dueDate, every);
-      continue;
     }
+  } else if (recurrence.frequency === "weekly" || recurrence.frequency === "range_interval") {
+    const selectedWeekDays = recurrence.weekDays && recurrence.weekDays.length > 0
+      ? [...new Set(recurrence.weekDays)]
+      : [recurrenceStartDate.getUTCDay()];
+    const weekInterval = every > 0 ? every : 1;
+    const anchorWeekStart = getWeekStartDate(recurrenceStartDate);
 
-    const daysStep = recurrence.frequency === "weekly" ? every * 7 : every;
-    plannedStartDate = addDaysToDate(plannedStartDate, daysStep);
-    dueDate = addDaysToDate(dueDate, daysStep);
+    let cursorDate = recurrenceStartDate;
+    while (cursorDate <= untilDate) {
+      const cursorWeekStart = getWeekStartDate(cursorDate);
+      const weeksOffset = Math.floor(
+        (toUtcDayNumber(cursorWeekStart) - toUtcDayNumber(anchorWeekStart)) / (7 * DAY_IN_MS),
+      );
+      const inSelectedInterval = weeksOffset % weekInterval === 0;
+
+      if (inSelectedInterval && selectedWeekDays.includes(cursorDate.getUTCDay())) {
+        const appended = pushOccurrence(cursorDate);
+        if (!appended) {
+          break;
+        }
+      }
+
+      cursorDate = addDaysToDate(cursorDate, 1);
+    }
+  } else {
+    const dayInterval = every > 0 ? every : 1;
+    let plannedStartDate = recurrenceStartDate;
+    while (plannedStartDate <= untilDate) {
+      const appended = pushOccurrence(plannedStartDate);
+      if (!appended) {
+        break;
+      }
+      plannedStartDate = addDaysToDate(plannedStartDate, dayInterval);
+    }
   }
 
   if (schedule.length === 0) {
