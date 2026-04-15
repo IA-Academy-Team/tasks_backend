@@ -5,6 +5,14 @@ const nullableTrimmedString = z.preprocess(
   z.union([z.string().trim(), z.null()]),
 );
 
+const nullableTrimmedHttpUrl = nullableTrimmedString
+  .refine((value) => value === null || /^https?:\/\//i.test(value), {
+    message: "completionEvidenceLink must be a valid http/https url",
+  })
+  .refine((value) => value === null || value.length <= 2000, {
+    message: "completionEvidenceLink must contain at most 2000 characters",
+  });
+
 const queryBoolean = z.preprocess((value) => {
   if (typeof value === "string") {
     const normalized = value.trim().toLowerCase();
@@ -21,8 +29,10 @@ const nullablePositiveInt = z.preprocess(
 
 const taskRecurrenceSchema = z.object({
   frequency: z.enum(["daily", "weekly", "monthly", "range_interval"]),
-  every: z.coerce.number().int().positive().max(365).optional().default(1),
+  every: z.coerce.number().int().positive().max(365).optional(),
+  startDate: z.coerce.date().optional(),
   untilDate: z.coerce.date(),
+  weekDays: z.array(z.coerce.number().int().min(1).max(5)).min(1).optional(),
 });
 
 const baseCreateTaskObjectSchema = z.object({
@@ -66,6 +76,13 @@ export const createTaskSchema = baseCreateTaskObjectSchema.refine((payload) => p
 ), {
   message: "recurrence.untilDate must be greater than or equal to dueDate",
   path: ["recurrence", "untilDate"],
+}).refine((payload) => (
+  !payload.recurrence
+  || !payload.recurrence.startDate
+  || payload.recurrence.untilDate >= payload.recurrence.startDate
+), {
+  message: "recurrence.untilDate must be greater than or equal to recurrence.startDate",
+  path: ["recurrence", "startDate"],
 });
 
 export const createStandaloneTaskSchema = baseCreateTaskObjectSchema
@@ -86,6 +103,14 @@ export const createStandaloneTaskSchema = baseCreateTaskObjectSchema
   ), {
     message: "recurrence.untilDate must be greater than or equal to dueDate",
     path: ["recurrence", "untilDate"],
+  })
+  .refine((payload) => (
+    !payload.recurrence
+    || !payload.recurrence.startDate
+    || payload.recurrence.untilDate >= payload.recurrence.startDate
+  ), {
+    message: "recurrence.untilDate must be greater than or equal to recurrence.startDate",
+    path: ["recurrence", "startDate"],
   });
 
 export const updateTaskSchema = z.object({
@@ -112,6 +137,7 @@ export const transitionTaskStatusSchema = z.object({
       message: "completionEvidence must contain at most 5000 characters",
     })
     .optional(),
+  completionEvidenceLink: nullableTrimmedHttpUrl.optional(),
   notes: nullableTrimmedString
     .refine((value) => value === null || value.length <= 1000, {
       message: "notes must contain at most 1000 characters",

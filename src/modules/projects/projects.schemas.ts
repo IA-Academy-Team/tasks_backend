@@ -18,6 +18,7 @@ const nullablePositiveInt = z.preprocess(
 export const projectsListQuerySchema = z.object({
   status: z.enum(["all", "active", "closed"]).optional().default("all"),
   areaId: z.coerce.number().int().positive().optional(),
+  employeeId: z.coerce.number().int().positive().optional(),
 });
 
 export const projectIdParamsSchema = z.object({

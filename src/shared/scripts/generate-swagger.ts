@@ -257,6 +257,9 @@ const openApiDocument = {
         type: "object",
         properties: {
           toStatus: { type: "string", enum: ["assigned", "in_progress", "done"] },
+          actualMinutes: { type: ["integer", "null"] },
+          completionEvidence: { type: ["string", "null"] },
+          completionEvidenceLink: { type: ["string", "null"] },
           notes: { type: ["string", "null"] },
         },
         required: ["toStatus"],

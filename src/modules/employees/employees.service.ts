@@ -1,6 +1,7 @@
 import bcrypt from "bcrypt";
 import prisma from "../../../prisma/prisma.client.js";
 import { AppError } from "../../shared/http/app-error.js";
+import { emitRealtimeEvent } from "../notifications/notifications.socket.js";
 import type { AuthRole } from "../auth/auth.policies.js";
 import { createNotificationRecord } from "../notifications/notifications.service.js";
 import type {
@@ -318,7 +319,18 @@ export const createEmployee = async (payload: CreateEmployeeInput): Promise<Empl
     return { employeeId: createdEmployee.id };
   });
 
-  return getEmployeeById(employeeId);
+  const created = await getEmployeeById(employeeId);
+  emitRealtimeEvent("employee:created", {
+    employee: created,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  emitRealtimeEvent("analytics:updated", {
+    entity: "employee",
+    action: "created",
+    employeeId: created.id,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  return created;
 };
 
 export const updateEmployee = async (
@@ -370,7 +382,18 @@ export const updateEmployee = async (
     }
   });
 
-  return getEmployeeById(employeeId);
+  const updated = await getEmployeeById(employeeId);
+  emitRealtimeEvent("employee:updated", {
+    employee: updated,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  emitRealtimeEvent("analytics:updated", {
+    entity: "employee",
+    action: "updated",
+    employeeId: updated.id,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  return updated;
 };
 
 export const deleteEmployee = async (
@@ -425,10 +448,22 @@ export const deleteEmployee = async (
     });
   });
 
-  return {
+  const result = {
     id: employeeId,
     mode: "deleted",
-  };
+  } as const;
+  emitRealtimeEvent("employee:deleted", {
+    employeeId,
+    mode: result.mode,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  emitRealtimeEvent("analytics:updated", {
+    entity: "employee",
+    action: "deleted",
+    employeeId,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  return result;
 };
 
 export const listEmployeeAreaAssignments = async (
