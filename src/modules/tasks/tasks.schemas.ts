@@ -32,7 +32,7 @@ const taskRecurrenceSchema = z.object({
   every: z.coerce.number().int().positive().max(365).optional(),
   startDate: z.coerce.date().optional(),
   untilDate: z.coerce.date(),
-  weekDays: z.array(z.coerce.number().int().min(0).max(6)).min(1).optional(),
+  weekDays: z.array(z.coerce.number().int().min(1).max(5)).min(1).optional(),
 });
 
 const baseCreateTaskObjectSchema = z.object({

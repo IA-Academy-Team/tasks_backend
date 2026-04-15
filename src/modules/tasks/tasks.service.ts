@@ -452,6 +452,25 @@ const addMonthsToDate = (source: Date, months: number): Date => {
 };
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const BUSINESS_WEEK_DAYS = new Set([1, 2, 3, 4, 5]);
+
+const isBusinessWeekDay = (weekDay: number): boolean => BUSINESS_WEEK_DAYS.has(weekDay);
+
+const alignToNextBusinessDay = (source: Date): Date => {
+  let alignedDate = source;
+
+  while (!isBusinessWeekDay(alignedDate.getUTCDay())) {
+    alignedDate = addDaysToDate(alignedDate, 1);
+  }
+
+  return alignedDate;
+};
+
+const normalizeWeekDaysToBusiness = (weekDays: number[]): number[] => (
+  [...new Set(weekDays)]
+    .filter((weekDay) => isBusinessWeekDay(weekDay))
+    .sort((left, right) => left - right)
+);
 
 const getDateSpanInDays = (startDate: Date, endDate: Date): number => {
   const diff = toUtcDayNumber(endDate) - toUtcDayNumber(startDate);
@@ -477,7 +496,7 @@ const buildRecurringTaskSchedule = (
   const { recurrence } = payload;
   const every = recurrence.every ?? 1;
   const untilDate = recurrence.untilDate;
-  const recurrenceStartDate = recurrence.startDate ?? payload.plannedStartDate;
+  const recurrenceStartDate = alignToNextBusinessDay(recurrence.startDate ?? payload.plannedStartDate);
   const dateSpanInDays = getDateSpanInDays(payload.plannedStartDate, payload.dueDate);
 
   if (untilDate < payload.dueDate) {
@@ -499,7 +518,12 @@ const buildRecurringTaskSchedule = (
   const schedule: Array<{ plannedStartDate: Date; dueDate: Date }> = [];
   const maxOccurrences = 400;
   const pushOccurrence = (startDate: Date) => {
-    const occurrence = getOccurrenceWindow(startDate, dateSpanInDays);
+    const businessStartDate = alignToNextBusinessDay(startDate);
+    if (businessStartDate > untilDate) {
+      return false;
+    }
+
+    const occurrence = getOccurrenceWindow(businessStartDate, dateSpanInDays);
     if (occurrence.dueDate > untilDate) {
       return false;
     }
@@ -525,9 +549,20 @@ const buildRecurringTaskSchedule = (
       plannedStartDate = addMonthsToDate(plannedStartDate, every);
     }
   } else if (recurrence.frequency === "weekly" || recurrence.frequency === "range_interval") {
-    const selectedWeekDays = recurrence.weekDays && recurrence.weekDays.length > 0
-      ? [...new Set(recurrence.weekDays)]
-      : [recurrenceStartDate.getUTCDay()];
+    const selectedWeekDays = normalizeWeekDaysToBusiness(
+      recurrence.weekDays && recurrence.weekDays.length > 0
+        ? recurrence.weekDays
+        : [recurrenceStartDate.getUTCDay()],
+    );
+
+    if (selectedWeekDays.length === 0) {
+      throw new AppError(
+        400,
+        "TASK_RECURRENCE_WEEK_DAYS_INVALID",
+        "Recurrence week days must include at least one weekday from Monday to Friday",
+      );
+    }
+
     const weekInterval = every > 0 ? every : 1;
     const anchorWeekStart = getWeekStartDate(recurrenceStartDate);
 
@@ -552,9 +587,11 @@ const buildRecurringTaskSchedule = (
     const dayInterval = every > 0 ? every : 1;
     let plannedStartDate = recurrenceStartDate;
     while (plannedStartDate <= untilDate) {
-      const appended = pushOccurrence(plannedStartDate);
-      if (!appended) {
-        break;
+      if (isBusinessWeekDay(plannedStartDate.getUTCDay())) {
+        const appended = pushOccurrence(plannedStartDate);
+        if (!appended) {
+          break;
+        }
       }
       plannedStartDate = addDaysToDate(plannedStartDate, dayInterval);
     }
