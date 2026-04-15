@@ -5,3 +5,4 @@ node_modules/
 /generated/prisma
 dist/
 prisma/migrations/
+package-lock.json

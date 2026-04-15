@@ -2,6 +2,7 @@ import type { Prisma } from "../../../generated/prisma/client.js";
 import prisma from "../../../prisma/prisma.client.js";
 import { AppError } from "../../shared/http/app-error.js";
 import type { AuthRole } from "../auth/auth.policies.js";
+import { emitRealtimeEvent } from "../notifications/notifications.socket.js";
 import { createNotificationRecord } from "../notifications/notifications.service.js";
 import type {
   CreateStandaloneTaskInput,
@@ -21,7 +22,7 @@ const TASK_STATUS_NAMES = {
 type WorkflowStatus = keyof typeof TASK_STATUS_NAMES;
 
 const WORKFLOW_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
-  assigned: ["in_progress"],
+  assigned: ["in_progress", "done"],
   in_progress: ["done"],
   done: [],
 };
@@ -40,6 +41,7 @@ interface TaskRecord {
   estimatedMinutes: number | null;
   reportedActualMinutes: number | null;
   completionEvidence: string | null;
+  completionEvidenceLink: string | null;
   deletedAt: Date | null;
   createdByUserId: number;
   createdAt: Date;
@@ -93,6 +95,7 @@ export interface TaskDto {
   estimatedMinutes: number | null;
   reportedActualMinutes: number | null;
   completionEvidence: string | null;
+  completionEvidenceLink: string | null;
   actualMinutes: number;
   deviationMinutes: number | null;
   isEstimateDelayed: boolean | null;
@@ -305,7 +308,7 @@ const mapTask = (task: TaskRecord, now: Date): TaskDto => {
   return {
     id: task.id,
     projectId: task.projectId ?? 0,
-    projectName: task.project?.name ?? "Tarea suelta",
+    projectName: task.project?.name ?? "Tarea independiente",
     taskStatusId: task.taskStatusId,
     status: task.status.name,
     taskPriorityId: task.taskPriorityId,
@@ -317,6 +320,7 @@ const mapTask = (task: TaskRecord, now: Date): TaskDto => {
     estimatedMinutes: task.estimatedMinutes ?? null,
     reportedActualMinutes: task.reportedActualMinutes ?? null,
     completionEvidence: task.completionEvidence ?? null,
+    completionEvidenceLink: task.completionEvidenceLink ?? null,
     actualMinutes: metrics.actualMinutes,
     deviationMinutes: metrics.deviationMinutes,
     isEstimateDelayed: metrics.isEstimateDelayed,
@@ -447,6 +451,41 @@ const addMonthsToDate = (source: Date, months: number): Date => {
   );
 };
 
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const BUSINESS_WEEK_DAYS = new Set([1, 2, 3, 4, 5]);
+
+const isBusinessWeekDay = (weekDay: number): boolean => BUSINESS_WEEK_DAYS.has(weekDay);
+
+const alignToNextBusinessDay = (source: Date): Date => {
+  let alignedDate = source;
+
+  while (!isBusinessWeekDay(alignedDate.getUTCDay())) {
+    alignedDate = addDaysToDate(alignedDate, 1);
+  }
+
+  return alignedDate;
+};
+
+const normalizeWeekDaysToBusiness = (weekDays: number[]): number[] => (
+  [...new Set(weekDays)]
+    .filter((weekDay) => isBusinessWeekDay(weekDay))
+    .sort((left, right) => left - right)
+);
+
+const getDateSpanInDays = (startDate: Date, endDate: Date): number => {
+  const diff = toUtcDayNumber(endDate) - toUtcDayNumber(startDate);
+  return Math.max(0, Math.round(diff / DAY_IN_MS));
+};
+
+const getOccurrenceWindow = (startDate: Date, dateSpanInDays: number) => ({
+  plannedStartDate: startDate,
+  dueDate: addDaysToDate(startDate, dateSpanInDays),
+});
+
+const getWeekStartDate = (source: Date): Date => (
+  addDaysToDate(source, -source.getUTCDay())
+);
+
 const buildRecurringTaskSchedule = (
   payload: Pick<CreateTaskInput, "plannedStartDate" | "dueDate" | "recurrence">,
 ): Array<{ plannedStartDate: Date; dueDate: Date }> => {
@@ -457,6 +496,8 @@ const buildRecurringTaskSchedule = (
   const { recurrence } = payload;
   const every = recurrence.every ?? 1;
   const untilDate = recurrence.untilDate;
+  const recurrenceStartDate = alignToNextBusinessDay(recurrence.startDate ?? payload.plannedStartDate);
+  const dateSpanInDays = getDateSpanInDays(payload.plannedStartDate, payload.dueDate);
 
   if (untilDate < payload.dueDate) {
     throw new AppError(
@@ -466,13 +507,28 @@ const buildRecurringTaskSchedule = (
     );
   }
 
-  const schedule: Array<{ plannedStartDate: Date; dueDate: Date }> = [];
-  let plannedStartDate = payload.plannedStartDate;
-  let dueDate = payload.dueDate;
-  const maxOccurrences = 400;
+  if (untilDate < recurrenceStartDate) {
+    throw new AppError(
+      400,
+      "TASK_RECURRENCE_START_DATE_INVALID",
+      "Recurrence start date must be less than or equal to recurrence end date",
+    );
+  }
 
-  while (dueDate <= untilDate) {
-    schedule.push({ plannedStartDate, dueDate });
+  const schedule: Array<{ plannedStartDate: Date; dueDate: Date }> = [];
+  const maxOccurrences = 400;
+  const pushOccurrence = (startDate: Date) => {
+    const businessStartDate = alignToNextBusinessDay(startDate);
+    if (businessStartDate > untilDate) {
+      return false;
+    }
+
+    const occurrence = getOccurrenceWindow(businessStartDate, dateSpanInDays);
+    if (occurrence.dueDate > untilDate) {
+      return false;
+    }
+
+    schedule.push(occurrence);
     if (schedule.length > maxOccurrences) {
       throw new AppError(
         400,
@@ -480,16 +536,65 @@ const buildRecurringTaskSchedule = (
         `Recurrence exceeded the allowed maximum of ${maxOccurrences} tasks`,
       );
     }
+    return true;
+  };
 
-    if (recurrence.frequency === "monthly") {
+  if (recurrence.frequency === "monthly") {
+    let plannedStartDate = recurrenceStartDate;
+    while (plannedStartDate <= untilDate) {
+      const appended = pushOccurrence(plannedStartDate);
+      if (!appended) {
+        break;
+      }
       plannedStartDate = addMonthsToDate(plannedStartDate, every);
-      dueDate = addMonthsToDate(dueDate, every);
-      continue;
+    }
+  } else if (recurrence.frequency === "weekly" || recurrence.frequency === "range_interval") {
+    const selectedWeekDays = normalizeWeekDaysToBusiness(
+      recurrence.weekDays && recurrence.weekDays.length > 0
+        ? recurrence.weekDays
+        : [recurrenceStartDate.getUTCDay()],
+    );
+
+    if (selectedWeekDays.length === 0) {
+      throw new AppError(
+        400,
+        "TASK_RECURRENCE_WEEK_DAYS_INVALID",
+        "Recurrence week days must include at least one weekday from Monday to Friday",
+      );
     }
 
-    const daysStep = recurrence.frequency === "weekly" ? every * 7 : every;
-    plannedStartDate = addDaysToDate(plannedStartDate, daysStep);
-    dueDate = addDaysToDate(dueDate, daysStep);
+    const weekInterval = every > 0 ? every : 1;
+    const anchorWeekStart = getWeekStartDate(recurrenceStartDate);
+
+    let cursorDate = recurrenceStartDate;
+    while (cursorDate <= untilDate) {
+      const cursorWeekStart = getWeekStartDate(cursorDate);
+      const weeksOffset = Math.floor(
+        (toUtcDayNumber(cursorWeekStart) - toUtcDayNumber(anchorWeekStart)) / (7 * DAY_IN_MS),
+      );
+      const inSelectedInterval = weeksOffset % weekInterval === 0;
+
+      if (inSelectedInterval && selectedWeekDays.includes(cursorDate.getUTCDay())) {
+        const appended = pushOccurrence(cursorDate);
+        if (!appended) {
+          break;
+        }
+      }
+
+      cursorDate = addDaysToDate(cursorDate, 1);
+    }
+  } else {
+    const dayInterval = every > 0 ? every : 1;
+    let plannedStartDate = recurrenceStartDate;
+    while (plannedStartDate <= untilDate) {
+      if (isBusinessWeekDay(plannedStartDate.getUTCDay())) {
+        const appended = pushOccurrence(plannedStartDate);
+        if (!appended) {
+          break;
+        }
+      }
+      plannedStartDate = addDaysToDate(plannedStartDate, dayInterval);
+    }
   }
 
   if (schedule.length === 0) {
@@ -967,6 +1072,19 @@ export const createTask = async (
   }
 
   const primaryTask = await getTaskById(primaryTaskId);
+  emitRealtimeEvent("task:created", {
+    task: primaryTask,
+    createdCount: createdTaskIds.length,
+    createdTaskIds,
+    issuedAt: new Date().toISOString(),
+  });
+  emitRealtimeEvent("analytics:updated", {
+    entity: "task",
+    action: "created",
+    taskId: primaryTask.id,
+    projectId: primaryTask.projectId,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
   return {
     task: primaryTask,
     createdCount: createdTaskIds.length,
@@ -1031,8 +1149,8 @@ export const createStandaloneTask = async (
       await createNotificationRecord({
         userId: assigneeEmployee.user.id,
         typeCode: "task_assignment",
-        title: "Nueva tarea suelta asignada",
-        message: `Te asignaron la tarea suelta \"${payload.title}\".`,
+        title: "Nueva tarea independiente asignada",
+        message: `Te asignaron la tarea independiente \"${payload.title}\".`,
         resourceType: "task",
         resourceId: task.id,
         metadata: {
@@ -1054,6 +1172,19 @@ export const createStandaloneTask = async (
   }
 
   const primaryTask = await getTaskById(primaryTaskId);
+  emitRealtimeEvent("task:created", {
+    task: primaryTask,
+    createdCount: createdTaskIds.length,
+    createdTaskIds,
+    issuedAt: new Date().toISOString(),
+  });
+  emitRealtimeEvent("analytics:updated", {
+    entity: "task",
+    action: "created",
+    taskId: primaryTask.id,
+    projectId: primaryTask.projectId,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
   return {
     task: primaryTask,
     createdCount: createdTaskIds.length,
@@ -1161,14 +1292,14 @@ export const updateTask = async (
         userId: membership.employee.userId,
         typeCode: "task_assignment",
         title: "Nueva tarea asignada",
-          message: `Te asignaron la tarea \"${payload.title ?? existingTask.title}\" en ${project?.name ?? "tareas sueltas"}.`,
+          message: `Te asignaron la tarea \"${payload.title ?? existingTask.title}\" en ${project?.name ?? "tareas independientes"}.`,
         resourceType: "task",
         resourceId: taskId,
         metadata: {
           taskId,
           taskTitle: payload.title ?? existingTask.title,
           projectId: project?.id ?? null,
-          projectName: project?.name ?? "Tarea suelta",
+          projectName: project?.name ?? "Tarea independiente",
           projectMembershipId: membership.id,
           employeeId: membership.employeeId,
         },
@@ -1176,7 +1307,19 @@ export const updateTask = async (
     }
   }
 
-  return getTaskById(taskId);
+  const updatedTask = await getTaskById(taskId);
+  emitRealtimeEvent("task:updated", {
+    task: updatedTask,
+    issuedAt: new Date().toISOString(),
+  });
+  emitRealtimeEvent("analytics:updated", {
+    entity: "task",
+    action: "updated",
+    taskId: updatedTask.id,
+    projectId: updatedTask.projectId,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  return updatedTask;
 };
 
 export const transitionTaskStatus = async (
@@ -1225,6 +1368,7 @@ export const transitionTaskStatus = async (
   const targetStatus = statusCatalog[payload.toStatus];
   const updatedAt = new Date();
   const completionEvidence = payload.completionEvidence ?? null;
+  const completionEvidenceLink = payload.completionEvidenceLink ?? null;
   const reportedActualMinutes = payload.actualMinutes ?? null;
 
   if (payload.toStatus === "done" && reportedActualMinutes === null) {
@@ -1304,6 +1448,7 @@ export const transitionTaskStatus = async (
     if (payload.toStatus === "done") {
       taskUpdateData.reportedActualMinutes = reportedActualMinutes;
       taskUpdateData.completionEvidence = completionEvidence;
+      taskUpdateData.completionEvidenceLink = completionEvidenceLink;
     }
 
     await tx.task.update({
@@ -1324,6 +1469,21 @@ export const transitionTaskStatus = async (
   });
 
   const updatedTask = await getTaskById(taskId);
+  emitRealtimeEvent("task:updated", {
+    task: updatedTask,
+    transition: {
+      fromStatus: task.status.name,
+      toStatus: targetStatus.name,
+    },
+    issuedAt: new Date().toISOString(),
+  });
+  emitRealtimeEvent("analytics:updated", {
+    entity: "task",
+    action: "status_transition",
+    taskId: updatedTask.id,
+    projectId: updatedTask.projectId,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
   return {
     task: updatedTask,
     transition: {
@@ -1393,8 +1553,21 @@ export const deleteTask = async (taskId: number): Promise<DeleteTaskResult> => {
     data: { deletedAt },
   });
 
-  return {
+  const result = {
     id: taskId,
     deletedAt: deletedAt.toISOString(),
   };
+  emitRealtimeEvent("task:deleted", {
+    taskId,
+    deletedAt: result.deletedAt,
+    issuedAt: new Date().toISOString(),
+  });
+  emitRealtimeEvent("analytics:updated", {
+    entity: "task",
+    action: "deleted",
+    taskId,
+    projectId: existingTask.projectId ?? 0,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  return result;
 };

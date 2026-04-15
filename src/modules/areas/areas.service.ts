@@ -1,5 +1,6 @@
 import prisma from "../../../prisma/prisma.client.js";
 import { AppError } from "../../shared/http/app-error.js";
+import { emitRealtimeEvent } from "../notifications/notifications.socket.js";
 import type {
   AreasListQuery,
   CreateAreaInput,
@@ -157,10 +158,21 @@ export const createArea = async (payload: CreateAreaInput): Promise<AreaDto> => 
   });
 
   const metrics = await buildAreaMetricsMap([area.id]);
-  return mapArea(area, metrics.get(area.id) ?? {
+  const created = mapArea(area, metrics.get(area.id) ?? {
     activeMemberCount: 0,
     activeProjectCount: 0,
   });
+  emitRealtimeEvent("area:created", {
+    area: created,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  emitRealtimeEvent("analytics:updated", {
+    entity: "area",
+    action: "created",
+    areaId: created.id,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  return created;
 };
 
 export const updateArea = async (
@@ -203,10 +215,21 @@ export const updateArea = async (
   });
 
   const metrics = await buildAreaMetricsMap([area.id]);
-  return mapArea(area, metrics.get(area.id) ?? {
+  const updated = mapArea(area, metrics.get(area.id) ?? {
     activeMemberCount: 0,
     activeProjectCount: 0,
   });
+  emitRealtimeEvent("area:updated", {
+    area: updated,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  emitRealtimeEvent("analytics:updated", {
+    entity: "area",
+    action: "updated",
+    areaId: updated.id,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  return updated;
 };
 
 export const updateAreaStatus = async (
@@ -248,5 +271,17 @@ export const deleteArea = async (areaId: number): Promise<DeleteAreaResult> => {
     });
   });
 
-  return { id: areaId, mode: "deleted" };
+  const result = { id: areaId, mode: "deleted" } as const;
+  emitRealtimeEvent("area:deleted", {
+    areaId,
+    mode: result.mode,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  emitRealtimeEvent("analytics:updated", {
+    entity: "area",
+    action: "deleted",
+    areaId,
+    issuedAt: new Date().toISOString(),
+  }, "admin");
+  return result;
 };
