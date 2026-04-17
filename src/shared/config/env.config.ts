@@ -14,6 +14,14 @@ const toPositiveInteger = (value: string | undefined, fallback: number) => {
   }
   return parsed;
 };
+const isLocalOrigin = (value: string) => {
+  try {
+    const parsed = new URL(value);
+    return parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+};
 
 // base de datos
 export const DB_HOST = normalize(process.env.DB_HOST, 'localhost');
@@ -45,10 +53,30 @@ export const PROD_HOST = normalize(process.env.PROD_HOST, 'https://sdfsfasdfjls.
 export const DEV_HOST = normalize(process.env.DEV_HOST, 'http://localhost:13131313');
 export const NODE_ENV = normalize(process.env.NODE_ENV, 'development');
 export const API_PREFIX = normalize(process.env.API_PREFIX, '/api');
-export const BACKEND_URL = normalize(
-  process.env.BACKEND_URL || process.env.BETTER_AUTH_URL,
-  `http://localhost:${PORT}`
+
+const backendUrlExplicit = normalize(process.env.BACKEND_URL);
+const backendUrlDev = normalize(process.env.BACKEND_URL_DEV || process.env.BETTER_AUTH_URL_DEV);
+const backendUrlProd = normalize(
+  process.env.BACKEND_URL_PROD
+  || process.env.BETTER_AUTH_URL_PROD
+  || PROD_HOST,
 );
+const backendUrlFallback = normalize(process.env.BETTER_AUTH_URL, `http://localhost:${PORT}`);
+const shouldUseProdUrls = NODE_ENV === "production" || !isLocalOrigin(FRONTEND_URL);
+
+export const BACKEND_URL = normalize(
+  backendUrlExplicit
+  || (shouldUseProdUrls ? backendUrlProd : backendUrlDev)
+  || backendUrlFallback,
+  `http://localhost:${PORT}`,
+);
+
+if (shouldUseProdUrls && isLocalOrigin(BACKEND_URL)) {
+  throw new Error(
+    `[env] BACKEND_URL resolved to a local origin (${BACKEND_URL}) while production URLs are expected. `
+    + "Set BACKEND_URL/BACKEND_URL_PROD/BETTER_AUTH_URL_PROD correctly.",
+  );
+}
 export const BETTER_AUTH_BASE_PATH = normalize(
   process.env.BETTER_AUTH_BASE_PATH,
   `${API_PREFIX}/auth/handler`
