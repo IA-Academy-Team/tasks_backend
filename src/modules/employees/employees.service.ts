@@ -89,8 +89,11 @@ export interface DeleteEmployeeResult {
   mode: "deleted";
 }
 
-const normalizeRoleName = (roleId: number): AuthRole =>
-  roleId === 1 ? "admin" : "employee";
+const normalizeRoleName = (roleId: number): AuthRole => {
+  if (roleId === 1) return "admin";
+  if (roleId === 3) return "leader";
+  return "employee";
+};
 
 const mapEmployee = (employee: EmployeeWithRelations): EmployeeDto => {
   const sortedAssignments = [...employee.areaAssignments]
@@ -135,14 +138,18 @@ const mapEmployee = (employee: EmployeeWithRelations): EmployeeDto => {
   };
 };
 
-const getEmployeeRoleId = async (): Promise<number> => {
+const getRoleIdByName = async (roleName: "employee" | "leader"): Promise<number> => {
   const role = await prisma.role.findFirst({
-    where: { name: "employee" },
+    where: { name: roleName },
     select: { id: true },
   });
 
   if (!role) {
-    throw new AppError(500, "ROLE_EMPLOYEE_NOT_FOUND", "Employee role configuration is missing");
+    throw new AppError(
+      500,
+      "ROLE_NOT_FOUND",
+      `Role configuration is missing for '${roleName}'`,
+    );
   }
 
   return role.id;
@@ -276,7 +283,7 @@ export const getEmployeeById = async (employeeId: number): Promise<EmployeeDto> 
 };
 
 export const createEmployee = async (payload: CreateEmployeeInput): Promise<EmployeeDto> => {
-  const employeeRoleId = await getEmployeeRoleId();
+  const employeeRoleId = await getRoleIdByName(payload.role ?? "employee");
 
   const { employeeId } = await prisma.$transaction(async (tx) => {
     const hashedPassword = await bcrypt.hash(payload.password, 10);

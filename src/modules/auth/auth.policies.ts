@@ -1,4 +1,4 @@
-export type AuthRole = "admin" | "employee";
+export type AuthRole = "admin" | "employee" | "leader";
 
 export type AuthResource =
   | "dashboard"
@@ -12,6 +12,7 @@ export type AuthResource =
 const ROLE_POLICIES: Record<AuthRole, AuthResource[]> = {
   admin: ["dashboard", "areas", "employees", "projects", "projectBoard", "profile", "members"],
   employee: ["dashboard", "projects", "projectBoard", "profile"],
+  leader: ["dashboard", "projects", "projectBoard", "profile"],
 };
 
 export const getAllowedResourcesByRole = (role: AuthRole): AuthResource[] =>
