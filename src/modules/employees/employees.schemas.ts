@@ -39,6 +39,7 @@ export const createEmployeeSchema = z.object({
   name: z.string().trim().min(2).max(150),
   email: z.string().trim().toLowerCase().email().max(320),
   password: z.string().min(8).max(72),
+  role: z.enum(["employee", "leader"]).optional().default("employee"),
   phoneNumber: nullableTrimmedString
     .refine((value) => value === null || value.length <= 30, {
       message: "phoneNumber must contain at most 30 characters",
