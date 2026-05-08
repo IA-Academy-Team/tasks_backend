@@ -292,9 +292,7 @@ const computeTaskComplianceMetrics = (
   const deviationMinutes = task.estimatedMinutes === null
     ? null
     : actualMinutes - task.estimatedMinutes;
-  const isEstimateDelayed = task.estimatedMinutes === null
-    ? null
-    : actualMinutes > task.estimatedMinutes;
+  const isEstimateDelayed = task.estimatedMinutes === null ? null : false;
 
   const dueDay = toUtcDayNumber(task.dueDate);
   const completionReference = task.status.name === TASK_STATUS_NAMES.done
@@ -302,11 +300,7 @@ const computeTaskComplianceMetrics = (
     : now;
   const referenceDay = toUtcDayNumber(completionReference);
   const isDateOverdue = referenceDay > dueDay;
-  const complianceStatus: TaskComplianceStatus = isDateOverdue
-    ? "date_overdue"
-    : isEstimateDelayed
-      ? "estimate_delayed"
-      : "on_time";
+  const complianceStatus: TaskComplianceStatus = isDateOverdue ? "date_overdue" : "on_time";
 
   return {
     actualMinutes,
@@ -796,13 +790,10 @@ export const getOverdueAlerts = async (query: OverdueAlertsQuery): Promise<Overd
 
   const alerts = typedTasks.flatMap((task) => {
     const metrics = computeTaskComplianceMetrics(task, now);
-    const isEstimateOverdue = task.estimatedMinutes !== null && metrics.actualMinutes > task.estimatedMinutes;
     let reason: OverdueAlertReason | null = null;
 
     if (metrics.isDateOverdue) {
       reason = "DATE_OVERDUE";
-    } else if (isEstimateOverdue) {
-      reason = "ESTIMATE_OVERDUE";
     }
 
     if (!reason) {
@@ -838,14 +829,12 @@ export const getOverdueAlerts = async (query: OverdueAlertsQuery): Promise<Overd
   const sortedAlerts = alerts.sort((a, b) => (
     Number(b.reason === "DATE_OVERDUE") - Number(a.reason === "DATE_OVERDUE")
     || (b.daysOverdue ?? 0) - (a.daysOverdue ?? 0)
-    || (b.deviationMinutes ?? 0) - (a.deviationMinutes ?? 0)
     || Date.parse(a.dueDate) - Date.parse(b.dueDate)
     || b.taskId - a.taskId
   ));
 
   const limitedAlerts = sortedAlerts.slice(0, query.limit);
   const dateOverdueAlerts = limitedAlerts.filter((alert) => alert.reason === "DATE_OVERDUE").length;
-  const estimateOverdueAlerts = limitedAlerts.filter((alert) => alert.reason === "ESTIMATE_OVERDUE").length;
 
   return {
     generatedAt: now.toISOString(),
@@ -860,7 +849,7 @@ export const getOverdueAlerts = async (query: OverdueAlertsQuery): Promise<Overd
     counters: {
       totalAlerts: limitedAlerts.length,
       dateOverdueAlerts,
-      estimateOverdueAlerts,
+      estimateOverdueAlerts: 0,
     },
     alerts: limitedAlerts,
   };

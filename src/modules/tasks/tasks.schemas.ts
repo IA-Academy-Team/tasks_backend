@@ -43,8 +43,8 @@ const baseCreateTaskObjectSchema = z.object({
       message: "description must contain at most 5000 characters",
     })
     .optional(),
-  plannedStartDate: z.coerce.date(),
-  dueDate: z.coerce.date(),
+  plannedStartDate: z.coerce.date().optional(),
+  dueDate: z.coerce.date().optional(),
   taskPriorityId: z.coerce.number().int().positive().optional().default(2),
   assigneeMembershipId: nullablePositiveInt.optional(),
   estimatedMinutes: nullablePositiveInt.optional(),
@@ -67,13 +67,24 @@ export const standaloneTasksListQuerySchema = z.object({
   includeDeleted: queryBoolean.optional().default(false),
 });
 
-export const createTaskSchema = baseCreateTaskObjectSchema.refine((payload) => payload.dueDate >= payload.plannedStartDate, {
+const hasValidDateRange = (payload: { plannedStartDate?: Date | undefined; dueDate?: Date | undefined }) => (
+  !payload.plannedStartDate
+  || !payload.dueDate
+  || payload.dueDate >= payload.plannedStartDate
+);
+
+const hasValidRecurrenceUntilDate = (
+  payload: { dueDate?: Date | undefined; recurrence?: { untilDate: Date } | undefined },
+) => (
+  !payload.recurrence
+  || !payload.dueDate
+  || payload.recurrence.untilDate >= payload.dueDate
+);
+
+export const createTaskSchema = baseCreateTaskObjectSchema.refine(hasValidDateRange, {
   message: "dueDate must be greater than or equal to plannedStartDate",
   path: ["dueDate"],
-}).refine((payload) => (
-  !payload.recurrence
-  || payload.recurrence.untilDate >= payload.dueDate
-), {
+}).refine(hasValidRecurrenceUntilDate, {
   message: "recurrence.untilDate must be greater than or equal to dueDate",
   path: ["recurrence", "untilDate"],
 }).refine((payload) => (
@@ -93,14 +104,11 @@ export const createStandaloneTaskSchema = baseCreateTaskObjectSchema
   .extend({
     assigneeEmployeeId: nullablePositiveInt.optional(),
   })
-  .refine((payload) => payload.dueDate >= payload.plannedStartDate, {
+  .refine(hasValidDateRange, {
     message: "dueDate must be greater than or equal to plannedStartDate",
     path: ["dueDate"],
   })
-  .refine((payload) => (
-    !payload.recurrence
-    || payload.recurrence.untilDate >= payload.dueDate
-  ), {
+  .refine(hasValidRecurrenceUntilDate, {
     message: "recurrence.untilDate must be greater than or equal to dueDate",
     path: ["recurrence", "untilDate"],
   })

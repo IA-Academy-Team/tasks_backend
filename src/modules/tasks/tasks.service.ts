@@ -280,9 +280,7 @@ const computeTaskMetrics = (task: TaskRecord, now: Date) => {
   const deviationMinutes = task.estimatedMinutes === null
     ? null
     : actualMinutes - task.estimatedMinutes;
-  const isEstimateDelayed = task.estimatedMinutes === null
-    ? null
-    : actualMinutes > task.estimatedMinutes;
+  const isEstimateDelayed = task.estimatedMinutes === null ? null : false;
   const dueDay = toUtcDayNumber(task.dueDate);
   const fallbackCompletionDate = task.status.name === TASK_STATUS_NAMES.done
     ? task.updatedAt
@@ -425,6 +423,34 @@ const validateTaskDates = (plannedStartDate: Date, dueDate: Date) => {
   }
 };
 
+const resolveTaskDateRange = (
+  plannedStartDate: Date | undefined,
+  dueDate: Date | undefined,
+  estimatedMinutes: number | null | undefined,
+): { plannedStartDate: Date; dueDate: Date } => {
+  if (plannedStartDate && dueDate) {
+    validateTaskDates(plannedStartDate, dueDate);
+    return { plannedStartDate, dueDate };
+  }
+
+  if (!estimatedMinutes || estimatedMinutes <= 0) {
+    throw new AppError(
+      400,
+      "TASK_ESTIMATE_REQUIRED_FOR_DATE_INFERENCE",
+      "Task estimatedMinutes is required when plannedStartDate or dueDate is missing",
+    );
+  }
+
+  const resolvedStartDate = plannedStartDate ?? new Date();
+  const resolvedDueDate = dueDate ?? new Date(resolvedStartDate.getTime() + estimatedMinutes * 60 * 1000);
+  validateTaskDates(resolvedStartDate, resolvedDueDate);
+
+  return {
+    plannedStartDate: resolvedStartDate,
+    dueDate: resolvedDueDate,
+  };
+};
+
 const addDaysToDate = (source: Date, days: number): Date => {
   const result = new Date(source);
   result.setUTCDate(result.getUTCDate() + days);
@@ -487,7 +513,7 @@ const getWeekStartDate = (source: Date): Date => (
 );
 
 const buildRecurringTaskSchedule = (
-  payload: Pick<CreateTaskInput, "plannedStartDate" | "dueDate" | "recurrence">,
+  payload: { plannedStartDate: Date; dueDate: Date; recurrence?: CreateTaskInput["recurrence"] },
 ): Array<{ plannedStartDate: Date; dueDate: Date }> => {
   if (!payload.recurrence) {
     return [{ plannedStartDate: payload.plannedStartDate, dueDate: payload.dueDate }];
@@ -989,8 +1015,15 @@ export const createTask = async (
 ): Promise<CreateTaskResult> => {
   const project = await ensureProjectAvailableForTask(payload.projectId);
   await ensureTaskPriorityExists(payload.taskPriorityId);
-  validateTaskDates(payload.plannedStartDate, payload.dueDate);
-  const recurrenceSchedule = buildRecurringTaskSchedule(payload);
+  const taskDateRange = resolveTaskDateRange(
+    payload.plannedStartDate,
+    payload.dueDate,
+    payload.estimatedMinutes ?? null,
+  );
+  const recurrenceSchedule = buildRecurringTaskSchedule({
+    ...taskDateRange,
+    recurrence: payload.recurrence,
+  });
   const assignedStatusId = await getAssignedStatusId();
   const assigneeMembershipId = await ensureValidAssigneeMembership(
     payload.projectId,
@@ -1097,8 +1130,15 @@ export const createStandaloneTask = async (
   actor: StandaloneTaskActor,
 ) => {
   await ensureTaskPriorityExists(payload.taskPriorityId);
-  validateTaskDates(payload.plannedStartDate, payload.dueDate);
-  const recurrenceSchedule = buildRecurringTaskSchedule(payload);
+  const taskDateRange = resolveTaskDateRange(
+    payload.plannedStartDate,
+    payload.dueDate,
+    payload.estimatedMinutes ?? null,
+  );
+  const recurrenceSchedule = buildRecurringTaskSchedule({
+    ...taskDateRange,
+    recurrence: payload.recurrence,
+  });
   const assignedStatusId = await getAssignedStatusId();
   const assigneeEmployeeId = actor.role === "employee"
     ? await resolveEmployeeIdFromUserId(actor.userId)
