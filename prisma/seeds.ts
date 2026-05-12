@@ -381,6 +381,7 @@ async function ensureAreaAssignment(params: {
 async function ensureProject(params: {
   areaId: number;
   projectStatusId: number;
+  createdByUserId: number;
   name: string;
   description: string;
   startDate?: Date | null;
@@ -874,6 +875,7 @@ async function main() {
   const projectOperaciones = await ensureProject({
     areaId: marketingArea.id,
     projectStatusId: activeProjectStatusId,
+    createdByUserId: adminUser.id,
     name: "Campana Retencion Q1",
     description: "Gestion de mensajes, segmentacion y seguimiento de conversion trimestral.",
     startDate: daysAgo(70),
@@ -882,6 +884,7 @@ async function main() {
   const projectDesarrollo = await ensureProject({
     areaId: desarrolloSoftwareArea.id,
     projectStatusId: activeProjectStatusId,
+    createdByUserId: adminUser.id,
     name: "Backend API v2",
     description: "Refactor del backend para autenticacion, tareas y reporterias.",
     startDate: daysAgo(55),
@@ -890,6 +893,7 @@ async function main() {
   const projectCalidad = await ensureProject({
     areaId: formacionesArea.id,
     projectStatusId: closedProjectStatusId,
+    createdByUserId: adminUser.id,
     name: "Plan de Formacion Onboarding",
     description: "Programa de capacitacion para nuevos ingresos del trimestre.",
     startDate: daysAgo(95),
@@ -900,6 +904,7 @@ async function main() {
   const projectLegacy = await ensureProject({
     areaId: edicionVideosArea.id,
     projectStatusId: closedProjectStatusId,
+    createdByUserId: adminUser.id,
     name: "Repositorio Audiovisual Legacy",
     description: "Iniciativa historica cerrada de reorganizacion de piezas audiovisuales.",
     startDate: daysAgo(130),
@@ -931,6 +936,7 @@ async function main() {
     const project = await ensureProject({
       areaId: area.id,
       projectStatusId,
+      createdByUserId: adminUser.id,
       name: `${area.name} - Proyecto ${String(projectOrder).padStart(2, "0")}`,
       description: `Proyecto operativo de ${area.name} para el ciclo ${projectOrder}.`,
       startDate: daysAgo(180 - projectOrder * 4),
