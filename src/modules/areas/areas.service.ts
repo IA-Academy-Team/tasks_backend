@@ -34,7 +34,7 @@ const buildAreaMetricsMap = async (areaIds: number[]): Promise<Map<number, AreaM
     return new Map();
   }
 
-  const [activeMemberCounts, activeProjectCounts] = await Promise.all([
+  const [activeMemberCounts, activeProjectMemberships] = await Promise.all([
     prisma.employeeAreaAssignment.groupBy({
       by: ["areaId"],
       where: {
@@ -45,16 +45,38 @@ const buildAreaMetricsMap = async (areaIds: number[]): Promise<Map<number, AreaM
         _all: true,
       },
     }),
-    prisma.project.groupBy({
-      by: ["areaId"],
+    prisma.projectMembership.findMany({
       where: {
-        areaId: { in: areaIds },
-        status: {
-          name: "Activo",
+        unassignedAt: null,
+        project: {
+          status: {
+            name: "Activo",
+          },
+        },
+        employee: {
+          areaAssignments: {
+            some: {
+              areaId: { in: areaIds },
+              endedAt: null,
+            },
+          },
         },
       },
-      _count: {
-        _all: true,
+      select: {
+        projectId: true,
+        employee: {
+          select: {
+            areaAssignments: {
+              where: {
+                areaId: { in: areaIds },
+                endedAt: null,
+              },
+              select: {
+                areaId: true,
+              },
+            },
+          },
+        },
       },
     }),
   ]);
@@ -74,11 +96,19 @@ const buildAreaMetricsMap = async (areaIds: number[]): Promise<Map<number, AreaM
     current.activeMemberCount = count._count._all;
   }
 
-  for (const count of activeProjectCounts) {
-    if (count.areaId === null) continue;
-    const current = metrics.get(count.areaId);
+  const projectIdsByAreaId = new Map<number, Set<number>>();
+  for (const membership of activeProjectMemberships) {
+    for (const assignment of membership.employee.areaAssignments) {
+      const projectIds = projectIdsByAreaId.get(assignment.areaId) ?? new Set<number>();
+      projectIds.add(membership.projectId);
+      projectIdsByAreaId.set(assignment.areaId, projectIds);
+    }
+  }
+
+  for (const [areaId, projectIds] of projectIdsByAreaId.entries()) {
+    const current = metrics.get(areaId);
     if (!current) continue;
-    current.activeProjectCount = count._count._all;
+    current.activeProjectCount = projectIds.size;
   }
 
   return metrics;

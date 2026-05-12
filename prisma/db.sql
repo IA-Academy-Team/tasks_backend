@@ -182,10 +182,14 @@ CREATE TABLE projects (
     start_date DATE,
     end_date DATE,
     closed_at TIMESTAMPTZ,
+    created_by_user_id INT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_projects_area
         FOREIGN KEY (area_id) REFERENCES areas (id)
+        ON DELETE RESTRICT,
+    CONSTRAINT fk_projects_created_by_user
+        FOREIGN KEY (created_by_user_id) REFERENCES users (id)
         ON DELETE RESTRICT,
     CONSTRAINT fk_projects_status
         FOREIGN KEY (project_status_id) REFERENCES project_statuses (id)
@@ -371,6 +375,9 @@ CREATE UNIQUE INDEX uq_employee_area_assignments_active_employee
 CREATE INDEX idx_projects_area_status_id
     ON projects (area_id, project_status_id);
 
+CREATE INDEX idx_projects_created_by_user_id
+    ON projects (created_by_user_id);
+
 CREATE INDEX idx_project_memberships_project_unassigned_at
     ON project_memberships (project_id, unassigned_at);
 
@@ -421,7 +428,8 @@ CREATE UNIQUE INDEX uq_task_work_sessions_open_task
 INSERT INTO roles (id, name)
 VALUES
     (1, 'admin'),
-    (2, 'employee')
+    (2, 'employee'),
+    (3, 'leader')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO project_statuses (id, name)

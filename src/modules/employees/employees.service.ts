@@ -21,6 +21,7 @@ interface EmployeeWithRelations {
     name: string;
     email: string;
     roleId: number;
+    isActive: boolean;
     emailVerified: boolean;
     phoneNumber: string | null;
     image: string | null;
@@ -41,6 +42,7 @@ export interface EmployeeDto {
   role: AuthRole;
   roleId: number;
   emailVerified: boolean;
+  isActive: boolean;
   phoneNumber: string | null;
   image: string | null;
   currentAreaId: number | null;
@@ -125,6 +127,7 @@ const mapEmployee = (employee: EmployeeWithRelations): EmployeeDto => {
     role: normalizeRoleName(employee.user.roleId),
     roleId: employee.user.roleId,
     emailVerified: employee.user.emailVerified,
+    isActive: employee.user.isActive,
     phoneNumber: employee.user.phoneNumber ?? null,
     image: employee.user.image ?? null,
     currentAreaId: currentAreaAssignment?.area.id ?? null,
@@ -165,6 +168,7 @@ const getEmployeeOrThrow = async (employeeId: number): Promise<EmployeeWithRelat
           name: true,
           email: true,
           roleId: true,
+          isActive: true,
           emailVerified: true,
           phoneNumber: true,
           image: true,
@@ -257,6 +261,7 @@ export const listEmployees = async (_query: EmployeesListQuery): Promise<Employe
           name: true,
           email: true,
           roleId: true,
+          isActive: true,
           emailVerified: true,
           phoneNumber: true,
           image: true,
@@ -343,8 +348,17 @@ export const createEmployee = async (payload: CreateEmployeeInput): Promise<Empl
 export const updateEmployee = async (
   employeeId: number,
   payload: UpdateEmployeeInput,
+  actorUserId?: number,
 ): Promise<EmployeeDto> => {
   const employee = await getEmployeeOrThrow(employeeId);
+
+  if (payload.isActive === false && actorUserId !== undefined && employee.userId === actorUserId) {
+    throw new AppError(
+      409,
+      "SELF_DEACTIVATION_NOT_ALLOWED",
+      "You cannot deactivate your own account",
+    );
+  }
 
   const data: {
     name?: string;
@@ -352,6 +366,7 @@ export const updateEmployee = async (
     phoneNumber?: string | null;
     image?: string | null;
     emailVerified?: boolean;
+    isActive?: boolean;
   } = {};
 
   if (payload.name !== undefined) {
@@ -372,6 +387,10 @@ export const updateEmployee = async (
 
   if (payload.emailVerified !== undefined) {
     data.emailVerified = payload.emailVerified;
+  }
+
+  if (payload.isActive !== undefined) {
+    data.isActive = payload.isActive;
   }
 
   await prisma.$transaction(async (tx) => {

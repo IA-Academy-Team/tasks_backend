@@ -75,6 +75,7 @@ model User {
   areaAssignmentsEnded       EmployeeAreaAssignment[] @relation("AreaAssignmentsEndedBy")
   projectMembershipsAssigned ProjectMembership[]      @relation("ProjectMembershipsAssignedBy")
   projectMembershipsEnded    ProjectMembership[]      @relation("ProjectMembershipsEndedBy")
+  projectsCreated            Project[]                @relation("ProjectsCreatedBy")
   tasksCreated               Task[]                   @relation("TasksCreatedBy")
   taskTransitionsChanged     TaskStatusTransition[]   @relation("TaskStatusTransitionsChangedBy")
   workSessionsStarted        TaskWorkSession[]        @relation("TaskWorkSessionsStartedBy")
@@ -222,16 +223,19 @@ model Project {
   startDate       DateTime? @map("start_date") @db.Date
   endDate         DateTime? @map("end_date") @db.Date
   closedAt        DateTime? @map("closed_at") @db.Timestamptz(6)
+  createdByUserId Int       @map("created_by_user_id")
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   area        Area?               @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  createdBy   User                @relation("ProjectsCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   status      ProjectStatus       @relation(fields: [projectStatusId], references: [id], onDelete: Restrict)
   memberships ProjectMembership[]
   tasks       Task[]
 
   @@unique([areaId, name], map: "uq_projects_area_name")
   @@index([areaId, projectStatusId], map: "idx_projects_area_status_id")
+  @@index([createdByUserId], map: "idx_projects_created_by_user_id")
   @@map("projects")
 }
 

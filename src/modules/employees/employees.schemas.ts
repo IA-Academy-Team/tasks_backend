@@ -59,6 +59,7 @@ export const updateEmployeeSchema = z.object({
     .optional(),
   image: imageUrlSchema.optional(),
   emailVerified: z.boolean().optional(),
+  isActive: z.boolean().optional(),
 }).refine((payload) => Object.keys(payload).length > 0, {
   message: "At least one editable field is required",
 });

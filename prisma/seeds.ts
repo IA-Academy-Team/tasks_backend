@@ -5,6 +5,7 @@ import prisma from "./prisma.client.js";
 const roles = [
   { id: 1, name: "admin" },
   { id: 2, name: "employee" },
+  { id: 3, name: "leader" },
 ];
 
 const projectStatuses = [

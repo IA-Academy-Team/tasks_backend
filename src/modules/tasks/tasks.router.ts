@@ -103,12 +103,14 @@ tasksRouter.get("/:taskId/history", async (req, res, next) => {
   }
 });
 
-tasksRouter.post("/", requireRole("admin"), async (req, res, next) => {
+tasksRouter.post("/", requireRole("admin", "leader", "employee"), async (req, res, next) => {
   try {
     const payload = createTaskSchema.parse(req.body);
     const authenticatedRequest = req as unknown as AuthenticatedRequest;
-    const actorUserId = authenticatedRequest.auth.user.id;
-    const result = await createTask(payload, actorUserId);
+    const result = await createTask(payload, {
+      userId: authenticatedRequest.auth.user.id,
+      role: authenticatedRequest.auth.user.role,
+    });
 
     res.status(201).json({ data: result });
   } catch (error) {
@@ -183,10 +185,14 @@ tasksRouter.patch("/:taskId/status", async (req, res, next) => {
   }
 });
 
-tasksRouter.delete("/:taskId", requireRole("admin"), async (req, res, next) => {
+tasksRouter.delete("/:taskId", requireRole("admin", "leader"), async (req, res, next) => {
   try {
     const { taskId } = taskIdParamsSchema.parse(req.params);
-    const result = await deleteTask(taskId);
+    const authenticatedRequest = req as unknown as AuthenticatedRequest;
+    const result = await deleteTask(taskId, {
+      userId: authenticatedRequest.auth.user.id,
+      role: authenticatedRequest.auth.user.role,
+    });
 
     res.status(200).json({ data: result });
   } catch (error) {
