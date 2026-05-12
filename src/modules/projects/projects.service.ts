@@ -467,6 +467,7 @@ export const createProject = async (
         description: payload.description ?? null,
         startDate: resolvedStartDate,
         endDate: payload.endDate ?? null,
+        createdByUserId: actor.userId,
       },
       select: { id: true },
     });
