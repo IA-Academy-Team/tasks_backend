@@ -17,8 +17,13 @@ export interface UserProfileDto {
   updatedAt: string;
 }
 
-const normalizeRoleName = (roleName: string): AuthRole =>
-  roleName === "admin" ? "admin" : "employee";
+const normalizeRoleName = (roleName: string): AuthRole => {
+  if (roleName === "admin" || roleName === "leader") {
+    return roleName;
+  }
+
+  return "employee";
+};
 
 const toUserProfileDto = (user: {
   id: number;

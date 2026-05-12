@@ -102,10 +102,14 @@ projectsRouter.get("/:projectId/memberships", async (req, res, next) => {
   }
 });
 
-projectsRouter.post("/", requireRole("admin"), async (req, res, next) => {
+projectsRouter.post("/", requireRole("admin", "leader"), async (req, res, next) => {
   try {
     const payload = createProjectSchema.parse(req.body);
-    const project = await createProject(payload);
+    const authenticatedRequest = req as unknown as AuthenticatedRequest;
+    const project = await createProject(payload, {
+      userId: authenticatedRequest.auth.user.id,
+      role: authenticatedRequest.auth.user.role,
+    });
 
     res.status(201).json({ data: project });
   } catch (error) {
@@ -118,11 +122,15 @@ projectsRouter.post("/", requireRole("admin"), async (req, res, next) => {
   }
 });
 
-projectsRouter.patch("/:projectId", requireRole("admin"), async (req, res, next) => {
+projectsRouter.patch("/:projectId", requireRole("admin", "leader"), async (req, res, next) => {
   try {
     const { projectId } = projectIdParamsSchema.parse(req.params);
     const payload = updateProjectSchema.parse(req.body);
-    const project = await updateProject(projectId, payload);
+    const authenticatedRequest = req as unknown as AuthenticatedRequest;
+    const project = await updateProject(projectId, payload, {
+      userId: authenticatedRequest.auth.user.id,
+      role: authenticatedRequest.auth.user.role,
+    });
 
     res.status(200).json({ data: project });
   } catch (error) {
@@ -135,11 +143,15 @@ projectsRouter.patch("/:projectId", requireRole("admin"), async (req, res, next)
   }
 });
 
-projectsRouter.patch("/:projectId/status", requireRole("admin"), async (req, res, next) => {
+projectsRouter.patch("/:projectId/status", requireRole("admin", "leader"), async (req, res, next) => {
   try {
     const { projectId } = projectIdParamsSchema.parse(req.params);
     const payload = updateProjectStatusSchema.parse(req.body);
-    const project = await updateProjectStatus(projectId, payload);
+    const authenticatedRequest = req as unknown as AuthenticatedRequest;
+    const project = await updateProjectStatus(projectId, payload, {
+      userId: authenticatedRequest.auth.user.id,
+      role: authenticatedRequest.auth.user.role,
+    });
 
     res.status(200).json({ data: project });
   } catch (error) {
@@ -157,10 +169,14 @@ projectsRouter.patch("/:projectId/status", requireRole("admin"), async (req, res
   }
 });
 
-projectsRouter.delete("/:projectId", requireRole("admin"), async (req, res, next) => {
+projectsRouter.delete("/:projectId", requireRole("admin", "leader"), async (req, res, next) => {
   try {
     const { projectId } = projectIdParamsSchema.parse(req.params);
-    const result = await deleteProject(projectId);
+    const authenticatedRequest = req as unknown as AuthenticatedRequest;
+    const result = await deleteProject(projectId, {
+      userId: authenticatedRequest.auth.user.id,
+      role: authenticatedRequest.auth.user.role,
+    });
 
     res.status(200).json({ data: result });
   } catch (error) {
@@ -173,13 +189,16 @@ projectsRouter.delete("/:projectId", requireRole("admin"), async (req, res, next
   }
 });
 
-projectsRouter.post("/:projectId/memberships", requireRole("admin"), async (req, res, next) => {
+projectsRouter.post("/:projectId/memberships", requireRole("admin", "leader"), async (req, res, next) => {
   try {
     const { projectId } = projectIdParamsSchema.parse(req.params);
     const payload = assignProjectMembershipSchema.parse(req.body);
     const authenticatedRequest = req as unknown as AuthenticatedRequest;
     const actorUserId = authenticatedRequest.auth.user.id;
-    const membership = await assignProjectMembership(projectId, payload, actorUserId);
+    const membership = await assignProjectMembership(projectId, payload, actorUserId, {
+      userId: authenticatedRequest.auth.user.id,
+      role: authenticatedRequest.auth.user.role,
+    });
 
     res.status(201).json({ data: membership });
   } catch (error) {
@@ -199,13 +218,16 @@ projectsRouter.post("/:projectId/memberships", requireRole("admin"), async (req,
 
 projectsRouter.patch(
   "/:projectId/memberships/:membershipId/unassign",
-  requireRole("admin"),
+  requireRole("admin", "leader"),
   async (req, res, next) => {
     try {
       const { projectId, membershipId } = projectMembershipIdParamsSchema.parse(req.params);
       const authenticatedRequest = req as unknown as AuthenticatedRequest;
       const actorUserId = authenticatedRequest.auth.user.id;
-      const membership = await unassignProjectMembership(projectId, membershipId, actorUserId);
+      const membership = await unassignProjectMembership(projectId, membershipId, actorUserId, {
+        userId: authenticatedRequest.auth.user.id,
+        role: authenticatedRequest.auth.user.role,
+      });
 
       res.status(200).json({ data: membership });
     } catch (error) {
@@ -226,14 +248,17 @@ projectsRouter.patch(
 
 projectsRouter.patch(
   "/:projectId/tasks/reassign",
-  requireRole("admin"),
+  requireRole("admin", "leader"),
   async (req, res, next) => {
     try {
       const { projectId } = projectIdParamsSchema.parse(req.params);
       const payload = reassignProjectTasksSchema.parse(req.body);
       const authenticatedRequest = req as unknown as AuthenticatedRequest;
       const actorUserId = authenticatedRequest.auth.user.id;
-      const result = await reassignProjectTasks(projectId, payload, actorUserId);
+      const result = await reassignProjectTasks(projectId, payload, actorUserId, {
+        userId: authenticatedRequest.auth.user.id,
+        role: authenticatedRequest.auth.user.role,
+      });
 
       res.status(200).json({ data: result });
     } catch (error) {
@@ -254,14 +279,17 @@ projectsRouter.patch(
 
 projectsRouter.patch(
   "/:projectId/memberships/:membershipId/reassign",
-  requireRole("admin"),
+  requireRole("admin", "leader"),
   async (req, res, next) => {
     try {
       const { projectId, membershipId } = projectMembershipIdParamsSchema.parse(req.params);
       const payload = reassignProjectMembershipSchema.parse(req.body);
       const authenticatedRequest = req as unknown as AuthenticatedRequest;
       const actorUserId = authenticatedRequest.auth.user.id;
-      const result = await reassignProjectMembership(projectId, membershipId, payload, actorUserId);
+      const result = await reassignProjectMembership(projectId, membershipId, payload, actorUserId, {
+        userId: authenticatedRequest.auth.user.id,
+        role: authenticatedRequest.auth.user.role,
+      });
 
       res.status(200).json({ data: result });
     } catch (error) {

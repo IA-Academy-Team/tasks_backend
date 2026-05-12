@@ -16,7 +16,7 @@ import type {
 
 type ProjectAccessActor = {
   userId: number;
-  role: "admin" | "employee";
+  role: "admin" | "employee" | "leader";
 };
 
 const PROJECT_STATUS_NAMES = {
@@ -255,11 +255,11 @@ const ensureEmployeeEligibleForProject = async (employeeId: number, projectAreaI
   });
 
   if (!employee) {
-    throw new AppError(404, "EMPLOYEE_NOT_FOUND", "Employee not found");
+    throw new AppError(404, "EMPLOYEE_NOT_FOUND", "Empleado no encontrado");
   }
 
   if (!employee.user.isActive) {
-    throw new AppError(409, "EMPLOYEE_INACTIVE", "Employee is inactive");
+    throw new AppError(409, "EMPLOYEE_INACTIVE", "Empleado está inactivo");
   }
 
   if (projectAreaId === null) {
@@ -393,7 +393,7 @@ export const listProjects = async (
     where.status = { name: PROJECT_STATUS_NAMES[query.status] };
   }
 
-  if (actor.role === "employee") {
+  if (actor.role === "employee" || actor.role === "leader") {
     const employeeId = await resolveEmployeeIdFromUserId(actor.userId);
     where.memberships = {
       some: {
@@ -432,7 +432,7 @@ export const getProjectById = async (
   projectId: number,
   actor?: ProjectAccessActor,
 ): Promise<ProjectDto> => {
-  if (actor?.role === "employee") {
+  if (actor?.role === "employee" || actor?.role === "leader") {
     await assertEmployeeCanAccessProject(projectId, actor.userId);
   }
 
@@ -440,25 +440,49 @@ export const getProjectById = async (
   return mapProject(project);
 };
 
-export const createProject = async (payload: CreateProjectInput): Promise<ProjectDto> => {
-  if (payload.areaId !== undefined && payload.areaId !== null) {
-    await ensureAreaActive(payload.areaId);
-  }
+export const createProject = async (
+  payload: CreateProjectInput,
+  actor: ProjectAccessActor,
+): Promise<ProjectDto> => {
   const resolvedStartDate = payload.startDate ?? new Date();
   validateDateRange(resolvedStartDate, payload.endDate ?? null);
 
   const statusIds = await resolveProjectStatusIds();
+  const initialEmployeeIds = new Set(payload.employeeIds ?? []);
 
-  const project = await prisma.project.create({
-    data: {
-      areaId: payload.areaId ?? null,
-      projectStatusId: statusIds.active,
-      name: payload.name,
-      description: payload.description ?? null,
-      startDate: resolvedStartDate,
-      endDate: payload.endDate ?? null,
-    },
-    select: { id: true },
+  if (actor.role === "leader") {
+    initialEmployeeIds.add(await resolveEmployeeIdFromUserId(actor.userId));
+  }
+
+  await Promise.all(
+    [...initialEmployeeIds].map((employeeId) => ensureEmployeeEligibleForProject(employeeId, null)),
+  );
+
+  const project = await prisma.$transaction(async (tx) => {
+    const createdProject = await tx.project.create({
+      data: {
+        areaId: null,
+        projectStatusId: statusIds.active,
+        name: payload.name,
+        description: payload.description ?? null,
+        startDate: resolvedStartDate,
+        endDate: payload.endDate ?? null,
+      },
+      select: { id: true },
+    });
+
+    if (initialEmployeeIds.size > 0) {
+      await tx.projectMembership.createMany({
+        data: [...initialEmployeeIds].map((employeeId) => ({
+          projectId: createdProject.id,
+          employeeId,
+          assignedByUserId: actor.userId,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    return createdProject;
   }).catch((error) => {
     if (isPrismaErrorWithCode(error) && error.code === "P2002") {
       throw new AppError(
@@ -488,7 +512,12 @@ export const createProject = async (payload: CreateProjectInput): Promise<Projec
 export const updateProject = async (
   projectId: number,
   payload: UpdateProjectInput,
+  actor?: ProjectAccessActor,
 ): Promise<ProjectDto> => {
+  if (actor && actor.role !== "admin") {
+    await assertEmployeeCanAccessProject(projectId, actor.userId);
+  }
+
   const existingProject = await getProjectSummaryOrThrow(projectId);
 
   if (payload.areaId !== undefined && payload.areaId !== null) {
@@ -571,7 +600,12 @@ export const updateProject = async (
 export const updateProjectStatus = async (
   projectId: number,
   payload: UpdateProjectStatusInput,
+  actor?: ProjectAccessActor,
 ): Promise<ProjectDto> => {
+  if (actor && actor.role !== "admin") {
+    await assertEmployeeCanAccessProject(projectId, actor.userId);
+  }
+
   const existingProject = await getProjectSummaryOrThrow(projectId);
   const statusIds = await resolveProjectStatusIds();
 
@@ -617,7 +651,12 @@ export const updateProjectStatus = async (
 
 export const deleteProject = async (
   projectId: number,
+  actor?: ProjectAccessActor,
 ): Promise<DeleteProjectResult> => {
+  if (actor && actor.role !== "admin") {
+    await assertEmployeeCanAccessProject(projectId, actor.userId);
+  }
+
   await getProjectSummaryOrThrow(projectId);
   await prisma.$transaction(async (tx) => {
     await tx.task.deleteMany({
@@ -653,7 +692,7 @@ export const listProjectMemberships = async (
   query: ProjectMembershipsListQuery,
   actor: ProjectAccessActor,
 ): Promise<ProjectMembershipDto[]> => {
-  if (actor.role === "employee") {
+  if (actor.role === "employee" || actor.role === "leader") {
     await assertEmployeeCanAccessProject(projectId, actor.userId);
   }
 
@@ -706,14 +745,19 @@ export const assignProjectMembership = async (
   projectId: number,
   payload: AssignProjectMembershipInput,
   actorUserId: number,
+  actor?: ProjectAccessActor,
 ): Promise<ProjectMembershipDto> => {
+  if (actor && actor.role !== "admin") {
+    await assertEmployeeCanAccessProject(projectId, actor.userId);
+  }
+
   const project = await getProjectSummaryOrThrow(projectId);
 
   if (project.status.name !== PROJECT_STATUS_NAMES.active) {
     throw new AppError(
       409,
       "PROJECT_NOT_ACTIVE",
-      "Project must be active to assign members",
+      "Proyecto tiene que estar activo para asignar miembros",
     );
   }
 
@@ -729,11 +773,8 @@ export const assignProjectMembership = async (
   });
 
   if (existingMembership) {
-    throw new AppError(
-      409,
-      "PROJECT_MEMBERSHIP_ALREADY_ACTIVE",
-      "Employee already has an active membership in this project",
-    );
+    const hydratedMembership = await getProjectMembershipOrThrow(projectId, existingMembership.id);
+    return mapProjectMembership(hydratedMembership);
   }
 
   const membership = await prisma.$transaction(async (tx) => {
@@ -767,11 +808,24 @@ export const assignProjectMembership = async (
     return hydratedMembership;
   }).catch((error) => {
     if (isPrismaErrorWithCode(error) && error.code === "P2002") {
-      throw new AppError(
-        409,
-        "PROJECT_MEMBERSHIP_ALREADY_ACTIVE",
-        "Employee already has an active membership in this project",
-      );
+      return prisma.projectMembership.findFirst({
+        where: {
+          projectId,
+          employeeId: payload.employeeId,
+          unassignedAt: null,
+        },
+        select: { id: true },
+      }).then(async (activeMembership) => {
+        if (!activeMembership) {
+          throw new AppError(
+            409,
+            "PROJECT_MEMBERSHIP_ALREADY_ACTIVE",
+            "Employee already has an active membership in this project",
+          );
+        }
+
+        return getProjectMembershipOrThrow(projectId, activeMembership.id);
+      });
     }
 
     throw error;
@@ -797,7 +851,12 @@ export const unassignProjectMembership = async (
   projectId: number,
   membershipId: number,
   actorUserId: number,
+  actor?: ProjectAccessActor,
 ): Promise<ProjectMembershipDto> => {
+  if (actor && actor.role !== "admin") {
+    await assertEmployeeCanAccessProject(projectId, actor.userId);
+  }
+
   const membership = await getProjectMembershipOrThrow(projectId, membershipId);
 
   if (!membership.unassignedAt) {
@@ -834,7 +893,12 @@ export const reassignProjectMembership = async (
   membershipId: number,
   payload: ReassignProjectMembershipInput,
   actorUserId: number,
+  actor?: ProjectAccessActor,
 ): Promise<ReassignProjectMembershipResult> => {
+  if (actor && actor.role !== "admin") {
+    await assertEmployeeCanAccessProject(projectId, actor.userId);
+  }
+
   const project = await getProjectSummaryOrThrow(projectId);
   const sourceMembership = await getProjectMembershipOrThrow(projectId, membershipId);
 
@@ -981,7 +1045,12 @@ export const reassignProjectTasks = async (
   projectId: number,
   payload: ReassignProjectTasksInput,
   actorUserId: number,
+  actor?: ProjectAccessActor,
 ): Promise<ReassignProjectTasksResult> => {
+  if (actor && actor.role !== "admin") {
+    await assertEmployeeCanAccessProject(projectId, actor.userId);
+  }
+
   const project = await getProjectSummaryOrThrow(projectId);
 
   if (payload.fromEmployeeId === payload.toEmployeeId) {
