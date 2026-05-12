@@ -14,7 +14,7 @@ export interface CurrentAuthSession {
     id: number;
     name: string;
     email: string;
-    role: "admin" | "employee";
+    role: "admin" | "employee" | "leader";
     roleId: number;
     isActive: boolean;
     emailVerified: boolean;
@@ -38,8 +38,13 @@ const toNumericId = (value: unknown) => {
   return null;
 };
 
-const normalizeRoleName = (roleName: string): "admin" | "employee" =>
-  roleName === "admin" ? "admin" : "employee";
+const normalizeRoleName = (roleName: string): "admin" | "employee" | "leader" => {
+  if (roleName === "admin" || roleName === "leader") {
+    return roleName;
+  }
+
+  return "employee";
+};
 
 export const getCurrentAuthSession = async (
   headers: IncomingHttpHeaders,

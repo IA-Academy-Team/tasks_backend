@@ -17,7 +17,6 @@ import {
 } from "./employees.schemas.js";
 import {
   createEmployee,
-  deleteEmployee,
   getEmployeeById,
   listEmployeeAreaAssignments,
   listEmployeeProjectMemberships,
@@ -29,9 +28,9 @@ import {
 
 export const employeesRouter = Router();
 
-employeesRouter.use(requireAuth, requireRole("admin"));
+employeesRouter.use(requireAuth);
 
-employeesRouter.get("/", async (req, res, next) => {
+employeesRouter.get("/", requireRole("admin", "leader"), async (req, res, next) => {
   try {
     const query = employeesListQuerySchema.parse(req.query);
     const employees = await listEmployees(query);
@@ -47,7 +46,7 @@ employeesRouter.get("/", async (req, res, next) => {
   }
 });
 
-employeesRouter.get("/:employeeId", async (req, res, next) => {
+employeesRouter.get("/:employeeId", requireRole("admin", "leader"), async (req, res, next) => {
   try {
     const { employeeId } = employeeIdParamsSchema.parse(req.params);
     const employee = await getEmployeeById(employeeId);
@@ -63,7 +62,7 @@ employeesRouter.get("/:employeeId", async (req, res, next) => {
   }
 });
 
-employeesRouter.post("/", async (req, res, next) => {
+employeesRouter.post("/", requireRole("admin"), async (req, res, next) => {
   try {
     const payload = createEmployeeSchema.parse(req.body);
     const employee = await createEmployee(payload);
@@ -79,11 +78,12 @@ employeesRouter.post("/", async (req, res, next) => {
   }
 });
 
-employeesRouter.patch("/:employeeId", async (req, res, next) => {
+employeesRouter.patch("/:employeeId", requireRole("admin"), async (req, res, next) => {
   try {
     const { employeeId } = employeeIdParamsSchema.parse(req.params);
     const payload = updateEmployeeSchema.parse(req.body);
-    const employee = await updateEmployee(employeeId, payload);
+    const authenticatedRequest = req as unknown as AuthenticatedRequest;
+    const employee = await updateEmployee(employeeId, payload, authenticatedRequest.auth.user.id);
 
     res.status(200).json({ data: employee });
   } catch (error) {
@@ -96,25 +96,15 @@ employeesRouter.patch("/:employeeId", async (req, res, next) => {
   }
 });
 
-employeesRouter.delete("/:employeeId", async (req, res, next) => {
-  try {
-    const { employeeId } = employeeIdParamsSchema.parse(req.params);
-    const authenticatedRequest = req as unknown as AuthenticatedRequest;
-    const actorUserId = authenticatedRequest.auth.user.id;
-    const result = await deleteEmployee(employeeId, actorUserId);
-
-    res.status(200).json({ data: result });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      next(new AppError(400, "VALIDATION_ERROR", "Invalid employee identifier", error.flatten()));
-      return;
-    }
-
-    next(error);
-  }
+employeesRouter.delete("/:employeeId", requireRole("admin"), async (_req, _res, next) => {
+  next(new AppError(
+    405,
+    "EMPLOYEE_DELETE_DISABLED",
+    "Employees cannot be deleted. Activate or deactivate the employee instead.",
+  ));
 });
 
-employeesRouter.get("/:employeeId/area-assignments", async (req, res, next) => {
+employeesRouter.get("/:employeeId/area-assignments", requireRole("admin"), async (req, res, next) => {
   try {
     const { employeeId } = employeeIdParamsSchema.parse(req.params);
     const query = employeeAssignmentsListQuerySchema.parse(req.query);
@@ -136,7 +126,7 @@ employeesRouter.get("/:employeeId/area-assignments", async (req, res, next) => {
   }
 });
 
-employeesRouter.post("/:employeeId/area-assignments", async (req, res, next) => {
+employeesRouter.post("/:employeeId/area-assignments", requireRole("admin"), async (req, res, next) => {
   try {
     const { employeeId } = employeeIdParamsSchema.parse(req.params);
     const payload = assignEmployeeAreaSchema.parse(req.body);
@@ -160,7 +150,7 @@ employeesRouter.post("/:employeeId/area-assignments", async (req, res, next) => 
   }
 });
 
-employeesRouter.patch("/:employeeId/area-assignments/unassign", async (req, res, next) => {
+employeesRouter.patch("/:employeeId/area-assignments/unassign", requireRole("admin"), async (req, res, next) => {
   try {
     const { employeeId } = employeeIdParamsSchema.parse(req.params);
     const payload = unassignEmployeeAreaSchema.parse(req.body ?? {});
@@ -184,7 +174,7 @@ employeesRouter.patch("/:employeeId/area-assignments/unassign", async (req, res,
   }
 });
 
-employeesRouter.get("/:employeeId/project-memberships", async (req, res, next) => {
+employeesRouter.get("/:employeeId/project-memberships", requireRole("admin", "leader"), async (req, res, next) => {
   try {
     const { employeeId } = employeeIdParamsSchema.parse(req.params);
     const query = employeeAssignmentsListQuerySchema.parse(req.query);

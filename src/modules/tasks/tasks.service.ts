@@ -654,7 +654,7 @@ const ensureProjectAvailableForTask = async (projectId: number) => {
   }
 
   if (project.status.name !== "Activo") {
-    throw new AppError(409, "PROJECT_NOT_ACTIVE", "Project must be active to manage tasks");
+    throw new AppError(409, "PROJECT_NOT_ACTIVE", "Proyecto tiene que estar activo para gestionar tareas");
   }
 
   return project;
@@ -699,11 +699,11 @@ const ensureStandaloneAssigneeEmployee = async (employeeId: number) => {
   });
 
   if (!employee) {
-    throw new AppError(404, "EMPLOYEE_NOT_FOUND", "Employee not found");
+    throw new AppError(404, "EMPLOYEE_NOT_FOUND", "Empleado no encontrado");
   }
 
   if (!employee.user.isActive) {
-    throw new AppError(409, "EMPLOYEE_INACTIVE", "Employee is inactive");
+    throw new AppError(409, "EMPLOYEE_INACTIVE", "Empleado está inactivo");
   }
 
   return employee;
@@ -1011,9 +1011,33 @@ export const getTaskById = async (taskId: number): Promise<TaskDto> => {
 
 export const createTask = async (
   payload: CreateTaskInput,
-  actorUserId: number,
+  actor: StandaloneTaskActor,
 ): Promise<CreateTaskResult> => {
   const project = await ensureProjectAvailableForTask(payload.projectId);
+  if (actor.role !== "admin") {
+    const employeeId = await resolveEmployeeIdFromUserId(actor.userId);
+    const membership = await prisma.projectMembership.findFirst({
+      where: {
+        projectId: payload.projectId,
+        employeeId,
+        unassignedAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (!membership) {
+      throw new AppError(403, "PROJECT_FORBIDDEN", "You do not have access to this project");
+    }
+
+    if (actor.role === "employee" && payload.assigneeMembershipId !== membership.id) {
+      throw new AppError(
+        403,
+        "TASK_ASSIGNEE_FORBIDDEN",
+        "Employee can only create project tasks assigned to their own membership",
+      );
+    }
+  }
+
   await ensureTaskPriorityExists(payload.taskPriorityId);
   const taskDateRange = resolveTaskDateRange(
     payload.plannedStartDate,
@@ -1059,7 +1083,7 @@ export const createTask = async (
           dueDate: occurrence.dueDate,
           estimatedMinutes: payload.estimatedMinutes ?? null,
           assigneeMembershipId,
-          createdByUserId: actorUserId,
+          createdByUserId: actor.userId,
         },
         select: { id: true },
       });
@@ -1071,7 +1095,7 @@ export const createTask = async (
           taskId: task.id,
           fromStatusId: null,
           toStatusId: assignedStatusId,
-          changedByUserId: actorUserId,
+          changedByUserId: actor.userId,
         },
       });
 
@@ -1090,7 +1114,7 @@ export const createTask = async (
             projectName: project.name,
             projectMembershipId: membership.id,
             employeeId: membership.employeeId,
-            assignedByUserId: actorUserId,
+            assignedByUserId: actor.userId,
           },
         }, tx);
       }
@@ -1574,10 +1598,35 @@ export const getTaskHistory = async (taskId: number): Promise<TaskHistoryEntryDt
   }));
 };
 
-export const deleteTask = async (taskId: number): Promise<DeleteTaskResult> => {
+export const deleteTask = async (
+  taskId: number,
+  actor?: StandaloneTaskActor,
+): Promise<DeleteTaskResult> => {
   const existingTask = await getTaskOrThrow(taskId);
   if (existingTask.projectId !== null) {
     await ensureProjectAvailableForTask(existingTask.projectId);
+  }
+
+  if (actor && actor.role !== "admin") {
+    if (existingTask.projectId === null) {
+      if (existingTask.createdByUserId !== actor.userId) {
+        throw new AppError(403, "TASK_DELETE_FORBIDDEN", "You cannot delete this task");
+      }
+    } else {
+      const employeeId = await resolveEmployeeIdFromUserId(actor.userId);
+      const membership = await prisma.projectMembership.findFirst({
+        where: {
+          projectId: existingTask.projectId,
+          employeeId,
+          unassignedAt: null,
+        },
+        select: { id: true },
+      });
+
+      if (!membership) {
+        throw new AppError(403, "TASK_DELETE_FORBIDDEN", "You cannot delete this task");
+      }
+    }
   }
 
   if (existingTask.deletedAt) {

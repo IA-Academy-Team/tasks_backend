@@ -32,6 +32,7 @@ export const projectMembershipIdParamsSchema = z.object({
 
 export const createProjectSchema = z.object({
   areaId: nullablePositiveInt.optional(),
+  employeeIds: z.array(z.coerce.number().int().positive()).optional().default([]),
   name: z.string().trim().min(2).max(160),
   description: nullableTrimmedString
     .refine((value) => value === null || value.length <= 5000, {
