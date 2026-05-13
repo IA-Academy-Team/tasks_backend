@@ -9,7 +9,25 @@ import {
   BETTER_AUTH_BASE_PATH,
   FRONTEND_ORIGINS,
   NODE_ENV,
+  PORT,
 } from "./env.config.js";
+
+const getOrigin = (value: string): string | null => {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+};
+
+const TRUSTED_ORIGINS = Array.from(
+  new Set([
+    ...FRONTEND_ORIGINS,
+    getOrigin(BACKEND_URL),
+    `http://localhost:${PORT}`,
+    `http://127.0.0.1:${PORT}`,
+  ].filter((origin): origin is string => Boolean(origin))),
+);
 
 export const auth = betterAuth({
   appName: "taskapp",
@@ -31,9 +49,7 @@ export const auth = betterAuth({
   baseURL: BACKEND_URL,
   basePath: BETTER_AUTH_BASE_PATH,
 
-  trustedOrigins: [
-    ...FRONTEND_ORIGINS,
-  ],
+  trustedOrigins: TRUSTED_ORIGINS,
 
   user: {
     modelName: "User",

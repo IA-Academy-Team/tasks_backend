@@ -29,7 +29,6 @@ const openApiDocument = {
     description: "API REST oficial para TaskApp (base path `/api`).",
   },
   servers: [
-    { url: `${BACKEND_URL}/api`, description: "Servidor actual" },
     { url: "http://localhost:3004/api", description: "Desarrollo local" },
   ],
   tags: [
@@ -364,46 +363,85 @@ const openApiDocument = {
         },
       },
     },
-    "/auth/handler/{path}": {
-      get: {
-        tags: ["Auth"],
-        summary: "Proxy Better Auth (GET)",
-        parameters: [
-          {
-            name: "path",
-            in: "path",
-            required: true,
-            schema: { type: "string" },
-            description: "Subruta Better Auth",
-          },
-        ],
-        responses: { 200: { description: "Respuesta de Better Auth" } },
-      },
+    "/auth/handler/sign-in/email": {
       post: {
         tags: ["Auth"],
-        summary: "Proxy Better Auth (POST)",
-        parameters: [
-          {
-            name: "path",
-            in: "path",
-            required: true,
-            schema: { type: "string" },
-            description: "Subruta Better Auth",
-          },
-        ],
+        summary: "Iniciar sesión con email/password (Better Auth)",
         requestBody: {
-          required: false,
+          required: true,
           content: {
             "application/json": {
-              schema: { type: "object" },
+              schema: { $ref: "#/components/schemas/AuthSignInRequest" },
             },
           },
         },
         responses: {
-          200: { description: "Respuesta de Better Auth" },
+          200: { description: "Sesión iniciada (set-cookie enviado por Better Auth)" },
           400: { $ref: "#/components/responses/BadRequest" },
           401: { $ref: "#/components/responses/Unauthorized" },
           403: { $ref: "#/components/responses/Forbidden" },
+        },
+      },
+    },
+    "/auth/handler/sign-out": {
+      post: {
+        tags: ["Auth"],
+        summary: "Cerrar sesión actual (Better Auth)",
+        security: secured,
+        responses: {
+          200: { description: "Sesión cerrada" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/auth/handler/request-password-reset": {
+      post: {
+        tags: ["Auth"],
+        summary: "Solicitar recuperación de contraseña (Better Auth)",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  email: { type: "string", format: "email" },
+                  redirectTo: { type: "string", format: "uri" },
+                },
+                required: ["email", "redirectTo"],
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "Solicitud procesada" },
+          400: { $ref: "#/components/responses/BadRequest" },
+        },
+      },
+    },
+    "/auth/handler/reset-password": {
+      post: {
+        tags: ["Auth"],
+        summary: "Restablecer contraseña con token (Better Auth)",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  token: { type: "string" },
+                  newPassword: { type: "string" },
+                },
+                required: ["token", "newPassword"],
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "Contraseña actualizada" },
+          400: { $ref: "#/components/responses/BadRequest" },
+          401: { $ref: "#/components/responses/Unauthorized" },
         },
       },
     },
