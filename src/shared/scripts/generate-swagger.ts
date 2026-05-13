@@ -29,7 +29,6 @@ const openApiDocument = {
     description: "API REST oficial para TaskApp (base path `/api`).",
   },
   servers: [
-    { url: `${BACKEND_URL}/api`, description: "Servidor actual" },
     { url: "http://localhost:3004/api", description: "Desarrollo local" },
   ],
   tags: [
